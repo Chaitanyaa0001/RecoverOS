@@ -1,8 +1,8 @@
-import GuardrailsClient from "../../components/guardrails/guardrailsClient";
-import { getGuardrails } from "../../lib/guardrails";
+import ReportsClient from "../../../components/reports/reportsClient";
+import { getReportData } from "../../../lib/reports";
 
-export default async function GuardrailsPage() {
-  const guardrails = await getGuardrails();
+export default async function ReportsPage() {
+  const reportData = await getReportData();
 
   return (
     <div
@@ -23,7 +23,7 @@ export default async function GuardrailsPage() {
         lg:w-[calc(100%-250px)]
       "
     >
-      <GuardrailsClient initialGuardrails={guardrails} />
+      <ReportsClient initialData={reportData} />
     </div>
   );
 }

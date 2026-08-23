@@ -1,83 +1,173 @@
 "use client";
 
-import MetricCard from "./MetricCard";
-import AIvsBaselineChart from "./AIvsBaselineChart";
-import RecoveryByTypeChart from "./RecoveryByTypeChart";
-import CumulativeRecoveryChart from "./CumulativeRecoveryChart";
+import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 
-export default function Dashboard({ data }) {
+import { ChevronDown } from "lucide-react";
+
+const ranges = [
+  {
+    value: "7d",
+    label: "Last 7 days",
+  },
+  {
+    value: "30d",
+    label: "Last 30 days",
+  },
+  {
+    value: "3m",
+    label: "Last 3 months",
+  },
+  {
+    value: "6m",
+    label: "Last 6 months",
+  },
+  {
+    value: "12m",
+    label: "Last 12 months",
+  },
+];
+
+export default function DashboardHeader({
+  agentStatus = "OFFLINE",
+}) {
+  const router = useRouter();
+
+  const searchParams =
+    useSearchParams();
+
+  const currentRange =
+    searchParams.get("range") ||
+    "30d";
+
+  const selectedRange =
+    ranges.find(
+      (range) =>
+        range.value === currentRange
+    ) || ranges[1];
+
+  const isLive =
+    agentStatus === "LIVE";
+
+  const handleRangeChange = (event) => {
+    const range =
+      event.target.value;
+
+    router.push(
+      `/dashboard?range=${range}`
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-[#f8fafb]">
-      
-      {/* ================= HEADER ================= */}
+    <header className="flex min-h-[58px] w-full items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 sm:px-5">
 
-      <header className="flex h-[58px] items-center justify-between border-b border-slate-200 bg-white px-5">
-        <div>
-          <h1 className="text-[15px] font-semibold text-slate-800">
-            Overview
-          </h1>
+      {/* LEFT */}
 
-          <p className="mt-0.5 text-[10px] text-slate-400">
-            Recovery performance across all failed revenue events
-          </p>
-        </div>
+      <div className="min-w-0">
 
-        <div className="flex items-center gap-2">
-          <button className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[10px] text-slate-600">
-            Last 30 days
-          </button>
+        <h1 className="text-[15px] font-semibold text-slate-800">
+          Razorpay AI Revenue Recovery
+        </h1>
 
-          <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-600">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Live
-          </div>
-        </div>
-      </header>
+        <p className="mt-0.5 truncate text-[10px] text-slate-400">
+          Revenue recovery performance across all connected merchants
+        </p>
 
-      {/* ================= CONTENT ================= */}
-
-      <div className="space-y-4 p-5">
-
-        {/* KPI CARDS */}
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            metric={data.metrics.atRisk}
-          />
-
-          <MetricCard
-            metric={data.metrics.recovered}
-          />
-
-          <MetricCard
-            metric={data.metrics.recoveryRate}
-          />
-
-          <MetricCard
-            metric={data.metrics.avgRecoveryTime}
-          />
-        </div>
-
-        {/* AI VS BASELINE */}
-
-        <AIvsBaselineChart
-          data={data.recoveryComparison}
-        />
-
-        {/* LOWER CHARTS */}
-
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          
-          <RecoveryByTypeChart
-            data={data.recoveryByType}
-          />
-
-          <CumulativeRecoveryChart
-            data={data.cumulativeRecovery}
-          />
-
-        </div>
       </div>
-    </div>
+
+      {/* RIGHT */}
+
+      <div className="flex shrink-0 items-center gap-2">
+
+        {/* PERIOD */}
+
+        <div className="relative hidden sm:block">
+
+          <select
+            value={selectedRange.value}
+            onChange={handleRangeChange}
+            className="
+              h-8
+              appearance-none
+              rounded-md
+              border
+              border-slate-200
+              bg-white
+              py-1.5
+              pl-3
+              pr-8
+              text-[10px]
+              text-slate-600
+              outline-none
+              focus:border-emerald-400
+            "
+          >
+
+            {ranges.map(
+              (range) => (
+                <option
+                  key={range.value}
+                  value={range.value}
+                >
+                  {range.label}
+                </option>
+              )
+            )}
+
+          </select>
+
+          <ChevronDown
+            size={13}
+            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+
+        </div>
+
+        {/* AGENT STATUS */}
+
+        <div
+          className={`
+            flex
+            items-center
+            gap-1.5
+            rounded-full
+            px-2.5
+            py-1
+            text-[10px]
+            font-medium
+
+            ${
+              isLive
+                ? "bg-emerald-50 text-emerald-600"
+                : "bg-slate-100 text-slate-500"
+            }
+          `}
+        >
+
+          <span
+            className={`
+              h-1.5
+              w-1.5
+              rounded-full
+
+              ${
+                isLive
+                  ? "animate-pulse bg-emerald-500"
+                  : "bg-slate-400"
+              }
+            `}
+          />
+
+          {isLive
+            ? "Live"
+            : "Agent Offline"}
+
+        </div>
+
+      </div>
+
+    </header>
   );
 }
