@@ -576,51 +576,32 @@ export default function EventsClient({
                                     confidence
                                   </p>
                                 )}
-
                               </div>
-
                             </div>
-
                           </td>
-
                         </tr>
                       );
                     }
                   )}
-
                 </tbody>
-
               </table>
-
             </div>
-
           ) : (
-
             <div className="flex min-h-[280px] flex-col items-center justify-center px-6 text-center">
-
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400">
                 <Search size={17} />
               </div>
-
               <p className="mt-3 text-[12px] font-medium text-slate-600">
                 No events found
               </p>
-
               <p className="mt-1 max-w-[300px] text-[10px] leading-5 text-slate-400">
                 No recovery events match the current filters.
                 Events will appear here once the AI recovery agent detects them.
               </p>
-
             </div>
-
           )}
-
         </div>
-
       </main>
-
-      
-
       {selectedEvent && (
         <EventDrawer
           event={selectedEvent}
