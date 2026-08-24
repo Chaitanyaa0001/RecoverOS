@@ -1,7 +1,7 @@
 import {
   sendRecoveryEmail,
   sendDunningEmail,
-} from "./email.action.js";
+} from "./email.actions.js";
 
 import {
   createAndSendPaymentLink,
@@ -45,7 +45,7 @@ export const executeAction =
             action: "VOICE",
 
             message:
-              "Voice recovery has been queued.",
+              "Voice recovery has been queued for a voice provider.",
           };
 
         case "SMART_RETRY":

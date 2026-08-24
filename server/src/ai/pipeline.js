@@ -10,252 +10,393 @@ import {
 
 import {
   applyGuardrails,
-} from "./guardrails.js";
+} from "./guardralis.js";
 
 import {
   executeAction,
-} from "./actions/action.executor.js";
+} from "./actions/action.executer.js";
 
-const addTimeline = (
-  event,
-  {
-    stage,
-    title,
-    description,
-    confidence = null,
+
+/*
+ * =====================================
+ * SOCKET PROGRESS HELPER
+ * =====================================
+ */
+
+const emitProgress = (event,onProgress,data) => {
+  if (typeof onProgress !== "function") {
+    return;
   }
-) => {
+  onProgress({
+    eventId: event._id,
+    batchId: event.batchId,
+    ...data,
+  });
+};
+
+
+/*
+ * =====================================
+ * TIMELINE HELPER
+ * =====================================
+ */
+
+const addTimeline = (event,{stage,title,description,confidence = null,}) => {
   event.timeline.push({
     stage,
-
     title,
-
     time: new Date(),
-
-    description,
-
+    description:
+      description ||
+      "Recovery pipeline step completed.",
     ...(confidence !== null
       ? { confidence }
       : {}),
   });
 };
 
-export const runPipeline =
-  async (eventId) => {
+/*
+ * =====================================
+ * MAIN PIPELINE
+ * =====================================
+ */
+export const runPipeline = async (eventId,onProgress = null) => {
 
-    // =====================================
-    // STEP 1 — LOAD EVENT
-    // =====================================
+  // =====================================
+  // 1. LOAD EVENT
+  // =====================================
 
-    const event =
-      await Event.findById(eventId);
-
-    if (!event) {
-      throw new Error(
-        "Event not found"
-      );
+  const event =await Event.findById(eventId);
+  if (!event) {
+    throw new Error(
+      "Event not found"
+    );
+  }
+  /*
+   * =====================================
+   * EVENT STARTED
+   * =====================================
+   */
+  emitProgress(event,onProgress,
+    {
+      stage: "started",
+      status: "PROCESSING",
+      message:
+        "Recovery pipeline started.",
     }
+  );
+  // =====================================
+  // 2. DIAGNOSIS AGENT
+  // =====================================
 
-    // =====================================
-    // STEP 2 — DIAGNOSIS AGENT
-    // =====================================
-
-    addTimeline(event, {
+  addTimeline(event, {
+    stage: "diagnosing",
+    title:
+      "AI Diagnosis Started",
+    description:
+      "RecoverJS is analyzing the revenue-loss event.",
+  });
+  await event.save();
+  /*
+   * LIVE UPDATE
+   */
+  emitProgress(event,onProgress,
+    {
       stage: "diagnosing",
+      status: "PROCESSING",
+      message:
+        "RecoverJS is analyzing the revenue-loss event.",
+    }
+  );
+  const diagnosis = await diagnoseEvent(event);
+  event.rootCause = diagnosis.rootCause;
 
-      title:
-        "AI Diagnosis Started",
+  event.rootCauseLabel = diagnosis.rootCauseLabel;
+  event.confidence = diagnosis.confidence;
+  event.rawLlmDiagnosis =diagnosis.rawResponse;
 
-      description:
-        "RecoverJS is analyzing the payment event.",
-    });
+  addTimeline(event, {
+    stage: "diagnosed",
+    title:
+      `Root Cause — ${diagnosis.rootCauseLabel}`,
+    description:
+      diagnosis.reasoning,
+    confidence:
+      diagnosis.confidence,
+  });
+  await event.save();
 
-    await event.save();
+  /*
+   * LIVE UPDATE
+   */
 
-    const diagnosis =
-      await diagnoseEvent(event);
-
-    event.rootCause =
-      diagnosis.rootCause;
-
-    event.rootCauseLabel =
-      diagnosis.rootCauseLabel;
-
-    event.confidence =
-      diagnosis.confidence;
-
-    event.rawLlmDiagnosis =
-      diagnosis.rawResponse;
-
-    addTimeline(event, {
+  emitProgress(event,onProgress,
+    {
       stage: "diagnosed",
-
-      title:
-        `Root Cause — ${diagnosis.rootCauseLabel}`,
-
-      description:
-        diagnosis.reasoning,
-
+      status: "PROCESSING",
+      rootCause:
+        diagnosis.rootCause,
+      rootCauseLabel:
+        diagnosis.rootCauseLabel,
       confidence:
         diagnosis.confidence,
-    });
-
-    await event.save();
-
-    // =====================================
-    // STEP 3 — RECOVERY DECISION AGENT
-    // =====================================
-
-    let decision;
-
-    const uncertain =
-      diagnosis.rootCause ===
-        "other" ||
-      diagnosis.confidence < 60;
-
-    if (uncertain) {
-      decision = {
-        action:
-          "ACCOUNT_MANAGER",
-
-        reasoning:
-          "Diagnosis confidence is too low for autonomous recovery.",
-
-        alternatives: [],
-
-        rawResponse: null,
-      };
-    } else {
-      decision =
-        await decideRecoveryAction(
-          event,
-          diagnosis
-        );
+      message:
+        diagnosis.reasoning,
     }
-
-    event.proposedAction =
-      decision.action;
-
-    event.actionReason =
-      decision.reasoning;
-
-    event.alternatives =
-      decision.alternatives;
-
-    event.rawLlmIntervention =
-      decision.rawResponse;
-
-    // =====================================
-    // STEP 4 — GUARDRAILS
-    // =====================================
-
-    const guardrailResult =
-      applyGuardrails(
-        decision.action,
+  );
+  // =====================================
+  // 3. RECOVERY DECISION AGENT
+  // =====================================
+  let decision;
+  const uncertain = diagnosis.rootCause === "other" || diagnosis.confidence < 60;
+  if (uncertain) {
+    decision = {
+      action:
+        "ACCOUNT_MANAGER",
+      reasoning:
+        "Diagnosis confidence is too low for autonomous recovery.",
+      alternatives: [],
+      rawResponse: null,
+    };
+  } else {
+    decision =
+      await decideRecoveryAction(
         event,
         diagnosis
       );
+  }
+  event.proposedAction = decision.action;
+  event.actionReason = decision.reasoning;
+  event.alternatives = decision.alternatives;
+  event.rawLlmIntervention = decision.rawResponse;
+  // =====================================
+  // PLANNING TIMELINE
+  // =====================================
+  addTimeline(event, {stage: "planning",
+    title:
+      `Recovery Action Selected — ${decision.action}`,
+    description:
+      decision.reasoning,
+  });
+  await event.save();
+  /*
+   * LIVE UPDATE
+   */
 
-    event.guardrail =
-      guardrailResult.guardrail;
+  emitProgress(event,onProgress,
+    {
+      stage: "planning",
+      status: "PROCESSING",
+      action:
+        decision.action,
 
-    event.recommendedAction =
-      guardrailResult.finalAction;
-
-    addTimeline(event, {
-      stage: "guardrail",
-
-      title:
-        guardrailResult.guardrail
-          .status === "BLOCKED"
-          ? "Guardrail Blocked"
-          : "Guardrail Approved",
-
-      description:
-        guardrailResult.guardrail.reason,
-    });
-
-    await event.save();
-
-    // =====================================
-    // STEP 5 — EXECUTE APPROVED ACTION
-    // =====================================
-
-    const actionResult =
-      await executeAction(
-        guardrailResult.finalAction,
-        event
-      );
-
-    event.actionStatus =
-      actionResult.status;
-
-    event.action =
-      actionResult.action;
-
-    event.actionResult =
-      actionResult.message;
-
-    // Save generated payment link
-    if (
-      actionResult.paymentLink
-    ) {
-      event.paymentLink =
-        actionResult.paymentLink;
+      message:
+        decision.reasoning,
+      alternatives:
+        decision.alternatives,
     }
+  );
+  // =====================================
+  // 4. GUARDRAILS
+  // =====================================
+  const guardrailResult =
+    applyGuardrails(
+      decision.action,
+      event,
+      diagnosis
+    );
+  event.guardrail = guardrailResult.guardrail;
+  event.recommendedAction = guardrailResult.finalAction;
+  const guardrailBlocked = guardrailResult.guardrail.status === "BLOCKED";
+  addTimeline(event, {
+    stage: "guardrail",
+    title:
+      guardrailBlocked ? "Guardrail Blocked" : "Guardrail Approved",
+    description:
+      guardrailResult.guardrail.reason,
+  });
+  await event.save();
+  /*
+   * LIVE UPDATE
+   */
+  emitProgress(event,onProgress,{
+      stage: "guardrail",
+      status: guardrailResult.guardrail.status,
+      action: guardrailResult.finalAction,
+      guardrail: guardrailResult.guardrail,
+      message: guardrailResult.guardrail.reason,
+    }
+  );
+  // =====================================
+  // 5. EXECUTE APPROVED ACTION
+  // =====================================
 
-    addTimeline(event, {
-      stage: "action",
+  let actionResult;
+  /*
+   * If there is no executable action,
+   * keep the event blocked.
+   */
 
-      title:
-        "Recovery Action",
+  if (!guardrailResult.finalAction) {
+      actionResult = {
+      status: "BLOCKED",
+      action: null,
+      message: guardrailResult.guardrail.reason || "No recovery action was approved.",
+    };
+  } else {
+    /*
+     * LIVE UPDATE
+     */
+    emitProgress( event,onProgress,
+      {
+        stage: "action",
+        status: "PROCESSING",
+        action: guardrailResult.finalAction,
+        message: `Executing ${guardrailResult.finalAction}.`,
+      }
+    );
+    actionResult = await executeAction( guardrailResult.finalAction,event);
+  }
 
-      description:
-        actionResult.message,
-    });
+  // =====================================
+  // 6. SAVE ACTION RESULT
+  // =====================================
+  event.actionStatus =actionResult.status;
+  event.action = actionResult.action;
+  event.actionResult = actionResult.message;
 
-    // =====================================
-    // STEP 6 — UPDATE RECOVERY STATUS
-    // =====================================
 
-    if (
-      actionResult.status ===
-      "EXECUTED"
-    ) {
+  // =====================================
+  // SAVE RAZORPAY PAYMENT LINK
+  // =====================================
+
+  if (
+    actionResult.paymentLink
+  ) {
+    event.paymentLink =
+      actionResult.paymentLink;
+  }
+
+
+  addTimeline(event, {
+    stage: "action",
+
+    title:
+      actionResult.action
+        ? `Action — ${actionResult.action}`
+        : "Action Blocked",
+
+    description:
+      actionResult.message ||
+      "Recovery action completed.",
+  });
+
+
+  // =====================================
+  // 7. UPDATE RECOVERY STATUS
+  // =====================================
+
+  switch (
+    actionResult.status
+  ) {
+
+    case "EXECUTED":
+
       event.status =
         "Recovery Pending";
 
       event.outcome =
         `${actionResult.action} executed. Waiting for recovery confirmation.`;
-    }
 
-    if (
-      actionResult.status ===
-      "BLOCKED"
-    ) {
+      break;
+
+
+    case "PENDING":
+
+      event.status =
+        "Recovery Pending";
+
+      event.outcome =
+        actionResult.message;
+
+      break;
+
+
+    case "BLOCKED":
+
       event.status =
         "In Progress";
 
       event.outcome =
         actionResult.message;
-    }
 
-    if (
-      actionResult.status ===
-      "FAILED"
-    ) {
+      break;
+
+
+    case "FAILED":
+
       event.status =
         "In Progress";
 
       event.outcome =
         `Recovery action failed: ${actionResult.message}`;
+
+      break;
+
+
+    default:
+
+      event.status =
+        "In Progress";
+
+      event.outcome =
+        actionResult.message ||
+        "Recovery action completed.";
+  }
+
+
+  // =====================================
+  // 8. SAVE EVERYTHING
+  // =====================================
+
+  await event.save();
+
+
+  /*
+   * =====================================
+   * FINAL LIVE UPDATE
+   * =====================================
+   */
+
+  emitProgress(
+    event,
+    onProgress,
+    {
+      stage: "completed",
+
+      status:
+        event.status,
+
+      action:
+        event.action,
+
+      actionStatus:
+        event.actionStatus,
+
+      recoveredAmount:
+        event.recoveredAmount,
+
+      paymentLink:
+        event.paymentLink,
+
+      outcome:
+        event.outcome,
+
+      message:
+        event.actionResult,
     }
+  );
 
-    // =====================================
-    // STEP 7 — SAVE EVERYTHING
-    // =====================================
 
-    await event.save();
-
-    return event;
-  };
+  return event;
+};

@@ -4,6 +4,8 @@ import {
   runPipeline,
 } from "../ai/pipeline.js";
 
+import {emitBatchEvent,} from "../socket/socketEmitter.js";
+
 export const runBatchPipeline =
   async (
     batchId,
@@ -13,13 +15,60 @@ export const runBatchPipeline =
     const events =
       await Event.find({
         batchId,
+        status: "In Progress",
+        actionStatus: "PENDING",
       })
-      .select("_id")
-      .lean();
+        .select("_id")
+        .lean();
+
+    if (!events.length) {
+      emitBatchEvent(batchId, {
+        stage: "batch_completed",
+        status: "COMPLETED",
+        total: 0,
+        completed: 0,
+        successful: 0,
+        failed: 0,
+        message:
+          "No pending events found for this batch.",
+      });
+
+      return {
+        batchId,
+        total: 0,
+        processed: 0,
+        successful: 0,
+        failed: 0,
+        results: [],
+      };
+    }
 
     let index = 0;
 
     const results = [];
+
+    /*
+     * =====================================
+     * BATCH STARTED
+     * =====================================
+     */
+
+    emitBatchEvent(batchId, {
+      stage: "batch_started",
+      status: "PROCESSING",
+      total: events.length,
+      completed: 0,
+      successful: 0,
+      failed: 0,
+      message:
+        "RecoverJS batch recovery started.",
+    });
+
+    /*
+     * =====================================
+     * WORKER
+     * =====================================
+     */
 
     const worker = async () => {
       while (true) {
@@ -38,10 +87,48 @@ export const runBatchPipeline =
           events[currentIndex];
 
         try {
+
+          /*
+           * =================================
+           * EVENT STARTED
+           * =================================
+           */
+
+          emitBatchEvent(batchId, {
+            eventId: event._id,
+            stage: "started",
+            status: "PROCESSING",
+            message:
+              "Recovery pipeline started.",
+          });
+
+          /*
+           * =================================
+           * RUN PIPELINE
+           *
+           * Pass progress callback so every
+           * pipeline stage reaches Socket.IO.
+           * =================================
+           */
+
           const result =
             await runPipeline(
-              event._id
+              event._id,
+              (progress) => {
+
+                emitBatchEvent(
+                  batchId,
+                  progress
+                );
+
+              }
             );
+
+          /*
+           * =================================
+           * SUCCESS
+           * =================================
+           */
 
           results.push({
             success: true,
@@ -51,9 +138,35 @@ export const runBatchPipeline =
 
             status:
               result.status,
+
+            action:
+              result.action,
+
+            actionStatus:
+              result.actionStatus,
+
+            recoveredAmount:
+              result.recoveredAmount,
+
+            paymentLink:
+              result.paymentLink || null,
           });
 
         } catch (error) {
+
+          /*
+           * =================================
+           * EVENT FAILED
+           * =================================
+           */
+
+          emitBatchEvent(batchId, {
+            eventId: event._id,
+            stage: "failed",
+            status: "FAILED",
+            message:
+              error.message,
+          });
 
           results.push({
             success: false,
@@ -68,13 +181,26 @@ export const runBatchPipeline =
       }
     };
 
+    /*
+     * =====================================
+     * CONCURRENCY
+     * =====================================
+     */
+
+    const workerCount =
+      Math.min(
+        Math.max(
+          Number(concurrency) || 5,
+          1
+        ),
+        10,
+        events.length
+      );
+
     const workers =
       Array.from(
         {
-          length: Math.min(
-            concurrency,
-            events.length
-          ),
+          length: workerCount,
         },
         () => worker()
       );
@@ -82,6 +208,48 @@ export const runBatchPipeline =
     await Promise.all(
       workers
     );
+
+    /*
+     * =====================================
+     * BATCH SUMMARY
+     * =====================================
+     */
+
+    const successful =
+      results.filter(
+        (result) =>
+          result.success
+      ).length;
+
+    const failed =
+      results.filter(
+        (result) =>
+          !result.success
+      ).length;
+
+    /*
+     * =====================================
+     * BATCH COMPLETED
+     * =====================================
+     */
+
+    emitBatchEvent(batchId, {
+      stage: "batch_completed",
+      status: "COMPLETED",
+
+      total:
+        events.length,
+
+      completed:
+        results.length,
+
+      successful,
+
+      failed,
+
+      message:
+        "RecoverJS batch recovery completed.",
+    });
 
     return {
       batchId,
@@ -92,15 +260,9 @@ export const runBatchPipeline =
       processed:
         results.length,
 
-      successful:
-        results.filter(
-          (r) => r.success
-        ).length,
+      successful,
 
-      failed:
-        results.filter(
-          (r) => !r.success
-        ).length,
+      failed,
 
       results,
     };

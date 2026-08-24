@@ -6,6 +6,7 @@ const TimelineStepSchema = new mongoose.Schema(
       type: String,
       enum: [
         "detected",
+        "started",
         "diagnosing",
         "diagnosed",
         "planning",

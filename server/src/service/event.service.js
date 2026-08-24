@@ -1,27 +1,16 @@
 import Event from "../models/Events.js";
 
-export const getAllEvents = async ({
-  page = 1,
-  limit = 20,
-  type,
-  status,
-  batchId,
-  search,
-} = {}) => {
+export const getAllEvents = async ({page = 1,limit = 20,type,status,batchId,search,} = {}) => {
   const query = {};
-
   if (type) {
     query.type = type;
   }
-
   if (status) {
     query.status = status;
   }
-
   if (batchId) {
     query.batchId = batchId;
   }
-
   if (search) {
     query.$or = [
       { _id: { $regex: search, $options: "i" } },
@@ -31,28 +20,17 @@ export const getAllEvents = async ({
       { companyName: { $regex: search, $options: "i" } },
     ];
   }
-
   const skip = (page - 1) * limit;
-
   const [events, total] = await Promise.all([
     Event.find(query)
       .sort({ detectedAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean(),
-
     Event.countDocuments(query),
   ]);
 
-  return {
-    events,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-      hasNextPage: page * limit < total,
-      hasPreviousPage: page > 1,
+  return {events,pagination: {page,limit,total,totalPages: Math.ceil(total / limit),hasNextPage: page * limit < total,hasPreviousPage: page > 1,
     },
   };
 };
