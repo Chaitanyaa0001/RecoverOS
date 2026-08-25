@@ -75,10 +75,10 @@ function getPeriodEvents(events, days) {
 }
 
 export async function getReportData() {
-  const allEvents = await getEvents();
+  const { events = [] } = await getEvents();
 
-  const current = getPeriodEvents(allEvents, 30);
-  const previous = getPeriodEvents(allEvents, 60);
+  const current = getPeriodEvents(events, 30);
+  const previous = getPeriodEvents(events, 60);
 
   const previousOnly = previous.events.filter((event) => {
     const detectedAt = new Date(event.detectedAt);

@@ -25,8 +25,7 @@ function deriveFinalStatus(rule = "") {
 }
 
 export async function getGuardrails() {
-  const events = await getEvents();
-
+const { events = [] } = await getEvents();
   const guardrailEvents = events.filter(
     (event) =>
       event.guardrail?.status === "BLOCKED" ||
