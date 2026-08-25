@@ -126,12 +126,26 @@ export const sendRecoveryEmail =
     /* =====================================================
        CREATE PAYMENT LINK
     ===================================================== */
+console.log("[EMAIL] Starting recovery email", {
+  eventId: event._id,
+  customerEmail: event.customer?.email,
+  amount: event.amount,
+  demoMode: env.DEMO_MODE,
+});
 
-    const paymentResult =
-      await createPaymentLink(event);
+console.log("[EMAIL] Creating Razorpay payment link...");
 
-    const paymentLink =
-      paymentResult.link;
+
+    const paymentResult = await createPaymentLink(event);
+
+    console.log("[EMAIL] Razorpay payment link created:", {
+  linkId: paymentResult.link?.linkId,
+  url: paymentResult.link?.url,
+});
+
+console.log("[EMAIL] Sending email through Brevo...")
+
+    const paymentLink = paymentResult.link;
 
     if (!paymentLink?.url) {
       throw new Error(
@@ -588,7 +602,7 @@ export const sendRecoveryEmail =
     /* =====================================================
        RETURN RESULT
     ===================================================== */
-
+    console.log("[EMAIL] Brevo email sent successfully");
     return {
       status: "EXECUTED",
       action: "EMAIL",
