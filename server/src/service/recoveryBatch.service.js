@@ -1,12 +1,6 @@
 import Event from "../models/Events.js";
-
-import {
-  runPipeline,
-} from "../ai/pipeline.js";
-
-import {
-  emitRecoveryEvent,
-} from "../socket/socketEmitter.js";
+import { runPipeline } from "../ai/pipeline.js";
+import { emitRecoveryEvent } from "../socket/socketEmitter.js";
 
 /* =========================================================
    BATCH PIPELINE
@@ -50,6 +44,13 @@ export const runBatchPipeline = async (
 
   /* =======================================================
      ATOMIC CLAIM
+
+     IMPORTANT:
+     Batch processing only claims PENDING events.
+
+     PROCESSING events cannot be claimed by another worker.
+     FAILED events are NOT automatically retried in the same
+     batch.
   ======================================================= */
 
   const claimNextEvent = async () => {
@@ -58,23 +59,14 @@ export const runBatchPipeline = async (
         _id: {
           $in: uniqueEventIds,
         },
-
         status: "In Progress",
-
-        actionStatus: {
-          $in: [
-            "PENDING",
-            "FAILED",
-          ],
-        },
+        actionStatus: "PENDING",
       },
-
       {
         $set: {
           actionStatus: "PROCESSING",
         },
       },
-
       {
         new: true,
       }
@@ -94,11 +86,18 @@ export const runBatchPipeline = async (
       const event =
         await claimNextEvent();
 
+      /*
+       * No more eligible events.
+       */
       if (!event) {
         return;
       }
 
       try {
+        /* =================================================
+           SOCKET: STARTED
+        ================================================= */
+
         emitRecoveryEvent({
           eventId: event._id,
           eventExternalId: event.id,
@@ -108,6 +107,10 @@ export const runBatchPipeline = async (
           message:
             "Recovery pipeline started.",
         });
+
+        /* =================================================
+           RUN PIPELINE
+        ================================================= */
 
         const result =
           await runPipeline(
@@ -122,41 +125,93 @@ export const runBatchPipeline = async (
             }
           );
 
+        /* =================================================
+           RESULT ACCOUNTING
+
+           Do NOT automatically consider every resolved
+           pipeline call successful.
+
+           Only EXECUTED is a successful autonomous action.
+        ================================================= */
+
+        if (
+          result?.actionStatus ===
+          "EXECUTED"
+        ) {
+          successful++;
+
+          results.push({
+            success: true,
+            eventId: event._id,
+            eventExternalId:
+              event.id,
+            status: result.status,
+            action: result.action,
+            actionStatus:
+              result.actionStatus,
+            recoveredAmount:
+              result.recoveredAmount,
+            paymentLink:
+              result.paymentLink,
+            outcome:
+              result.outcome,
+          });
+        } else {
+          failed++;
+
+          results.push({
+            success: false,
+            eventId: event._id,
+            eventExternalId:
+              event.id,
+            status: result?.status,
+            action: result?.action,
+            actionStatus:
+              result?.actionStatus,
+            recoveredAmount:
+              result?.recoveredAmount,
+            paymentLink:
+              result?.paymentLink,
+            outcome:
+              result?.outcome ||
+              "Recovery action was not executed.",
+          });
+        }
+
+        /* =================================================
+           SOCKET: COMPLETED
+        ================================================= */
+
         emitRecoveryEvent({
           eventId: event._id,
           eventExternalId: event.id,
           stage: "completed",
-          status: result.status,
-          action: result.action,
+          status: result?.status,
+          action: result?.action,
           actionStatus:
-            result.actionStatus,
+            result?.actionStatus,
           recoveredAmount:
-            result.recoveredAmount,
+            result?.recoveredAmount,
           paymentLink:
-            result.paymentLink,
-          outcome: result.outcome,
+            result?.paymentLink,
+          outcome:
+            result?.outcome,
           message:
-            result.actionResult ||
+            result?.actionResult ||
+            result?.outcome ||
             "Recovery pipeline completed.",
         });
 
-        results.push({
-          success: true,
-          eventId: event._id,
-          eventExternalId: event.id,
-          status: result.status,
-          action: result.action,
-          actionStatus:
-            result.actionStatus,
-          recoveredAmount:
-            result.recoveredAmount,
-          paymentLink:
-            result.paymentLink,
-          outcome: result.outcome,
-        });
-
-        successful++;
       } catch (error) {
+        console.error(
+          `Recovery event ${event._id} failed:`,
+          error
+        );
+
+        /* =================================================
+           RELEASE ONLY OUR PROCESSING CLAIM
+        ================================================= */
+
         await Event.findOneAndUpdate(
           {
             _id: event._id,
@@ -173,6 +228,10 @@ export const runBatchPipeline = async (
           }
         );
 
+        /* =================================================
+           SOCKET: ERROR
+        ================================================= */
+
         emitRecoveryEvent({
           eventId: event._id,
           eventExternalId: event.id,
@@ -187,7 +246,8 @@ export const runBatchPipeline = async (
         results.push({
           success: false,
           eventId: event._id,
-          eventExternalId: event.id,
+          eventExternalId:
+            event.id,
           error:
             error?.message ||
             "Recovery pipeline failed.",
@@ -197,6 +257,10 @@ export const runBatchPipeline = async (
       }
 
       processed++;
+
+      /* =================================================
+         SOCKET: PROGRESS
+      ================================================= */
 
       emitRecoveryEvent({
         eventId: event._id,

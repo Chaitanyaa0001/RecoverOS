@@ -15,7 +15,6 @@ const razorpay =
     ? new Razorpay({
         key_id:
           env.RAZORPAY_KEY_ID,
-
         key_secret:
           env.RAZORPAY_KEY_SECRET,
       })
@@ -27,9 +26,17 @@ const razorpay =
 
 export const createPaymentLink =
   async (event) => {
+
+    const amount =
+      Number(event.amount);
+
+    /* =====================================================
+       VALIDATE AMOUNT
+    ===================================================== */
+
     if (
-      !event.amount ||
-      event.amount <= 0
+      !Number.isFinite(amount) ||
+      amount <= 0
     ) {
       throw new Error(
         "Invalid payment amount"
@@ -59,8 +66,7 @@ export const createPaymentLink =
             "http://localhost:3000"
           }/payment/demo/${event._id}`,
 
-        amount:
-          event.amount,
+        amount,
 
         expiresInHours: 48,
       };
@@ -75,7 +81,7 @@ export const createPaymentLink =
     }
 
     /* =====================================================
-       RAZORPAY
+       RAZORPAY CONFIG
     ===================================================== */
 
     if (!razorpay) {
@@ -84,61 +90,101 @@ export const createPaymentLink =
       );
     }
 
+    /* =====================================================
+       CONVERT INR → PAISE
+
+       IMPORTANT:
+       Razorpay expects the smallest currency unit.
+
+       ₹33,099
+       →
+       3,309,900 paise
+    ===================================================== */
+
+    const amountInPaise =
+      Math.round(
+        amount * 100
+      );
+
+    if (
+      !Number.isSafeInteger(
+        amountInPaise
+      )
+    ) {
+      throw new Error(
+        "Payment amount is too large."
+      );
+    }
+
+    console.log(
+      "[Razorpay] Creating payment link:",
+      {
+        eventId: event._id,
+        amountINR: amount,
+        amountPaise:
+          amountInPaise,
+      }
+    );
+
+    /* =====================================================
+       CREATE PAYMENT LINK
+    ===================================================== */
+
     const paymentLink =
-      await razorpay.paymentLink.create({
-        amount:
-          Math.round(
-            event.amount * 100
-          ),
+      await razorpay.paymentLink.create(
+        {
+          amount:
+            amountInPaise,
 
-        currency:
-          event.currency || "INR",
+          currency:
+            event.currency ||
+            "INR",
 
-        description:
-          `RecoverJS recovery for ${event._id}`,
+          description:
+            `RecoverJS recovery for ${event._id}`,
 
-        reference_id:
-          event._id,
-
-        customer: {
-          name:
-            event.customer.name,
-
-          email:
-            event.customer.email,
-
-          ...(event.customer.phone
-            ? {
-                contact:
-                  event.customer.phone,
-              }
-            : {}),
-        },
-
-        notes: {
-          recoverEventId:
+          reference_id:
             event._id,
-        },
 
-        /*
-         * IMPORTANT:
-         *
-         * Razorpay does NOT send the email.
-         *
-         * Brevo handles email delivery.
-         */
-        notify: {
-          email: false,
-          sms: false,
-        },
+          customer: {
+            name:
+              event.customer.name,
 
-        reminder_enable: false,
+            email:
+              event.customer.email,
 
-        callback_url:
-          `${env.CLIENT_URL}/payment/success`,
+            ...(event.customer.phone
+              ? {
+                  contact:
+                    event.customer.phone,
+                }
+              : {}),
+          },
 
-        callback_method: "get",
-      });
+          notes: {
+            recoverEventId:
+              event._id,
+          },
+
+          notify: {
+            email: false,
+            sms: false,
+          },
+
+          reminder_enable:
+            false,
+
+          callback_url:
+            `${env.CLIENT_URL}/payment/success`,
+
+          callback_method:
+            "get",
+        }
+      );
+
+    /* =====================================================
+       NORMALIZE RESPONSE
+    ===================================================== */
 
     const link = {
       linkId:
@@ -147,8 +193,7 @@ export const createPaymentLink =
       url:
         paymentLink.short_url,
 
-      amount:
-        event.amount,
+      amount,
 
       expiresInHours: 48,
     };

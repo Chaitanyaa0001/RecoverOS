@@ -1,4 +1,5 @@
 import Event from "../models/Events.js";
+
 import { diagnoseEvent } from "./agents/diagnosis.agent.js";
 import { decideRecoveryAction } from "./agents/recovery.agent.js";
 import { applyGuardrails } from "./guardralis.js";
@@ -51,10 +52,11 @@ const addTimeline = (
 
 /* =========================================================
    RUN PIPELINE
+
    Processes ONE event.
 
    IMPORTANT:
-   The controller/batch worker atomically changes:
+   Controller / batch worker atomically changes:
 
    PENDING / FAILED
           ↓
@@ -112,9 +114,13 @@ export const runPipeline = async (
   const diagnosis = await diagnoseEvent(event);
 
   event.rootCause = diagnosis.rootCause;
+
   event.rootCauseLabel =
     diagnosis.rootCauseLabel;
-  event.confidence = diagnosis.confidence;
+
+  event.confidence =
+    diagnosis.confidence;
+
   event.rawLlmDiagnosis =
     diagnosis.rawResponse;
 
@@ -122,8 +128,10 @@ export const runPipeline = async (
     stage: "diagnosed",
     title:
       `Root Cause — ${diagnosis.rootCauseLabel}`,
-    description: diagnosis.reasoning,
-    confidence: diagnosis.confidence,
+    description:
+      diagnosis.reasoning,
+    confidence:
+      diagnosis.confidence,
   });
 
   await event.save();
@@ -132,11 +140,14 @@ export const runPipeline = async (
     stage: "diagnosed",
     status: event.status,
     actionStatus: "PROCESSING",
-    rootCause: diagnosis.rootCause,
+    rootCause:
+      diagnosis.rootCause,
     rootCauseLabel:
       diagnosis.rootCauseLabel,
-    confidence: diagnosis.confidence,
-    message: diagnosis.reasoning,
+    confidence:
+      diagnosis.confidence,
+    message:
+      diagnosis.reasoning,
   });
 
   /* =======================================================
@@ -149,10 +160,15 @@ export const runPipeline = async (
       diagnosis
     );
 
-  event.proposedAction = decision.action;
-  event.actionReason = decision.reasoning;
+  event.proposedAction =
+    decision.action;
+
+  event.actionReason =
+    decision.reasoning;
+
   event.alternatives =
     decision.alternatives;
+
   event.rawLlmIntervention =
     decision.rawResponse;
 
@@ -160,7 +176,8 @@ export const runPipeline = async (
     stage: "planning",
     title:
       `Recovery Action Selected — ${decision.action}`,
-    description: decision.reasoning,
+    description:
+      decision.reasoning,
   });
 
   await event.save();
@@ -169,8 +186,10 @@ export const runPipeline = async (
     stage: "planning",
     status: event.status,
     actionStatus: "PROCESSING",
-    action: decision.action,
-    message: decision.reasoning,
+    action:
+      decision.action,
+    message:
+      decision.reasoning,
     alternatives:
       decision.alternatives,
   });
@@ -209,12 +228,17 @@ export const runPipeline = async (
 
   emitProgress(event, onProgress, {
     stage: "guardrail",
+
+    // This is guardrail status, NOT business status.
     status:
       guardrailResult.guardrail.status,
+
     action:
       guardrailResult.finalAction,
+
     guardrail:
       guardrailResult.guardrail,
+
     message:
       guardrailResult.guardrail.reason,
   });
@@ -274,9 +298,11 @@ export const runPipeline = async (
 
   addTimeline(event, {
     stage: "action",
+
     title: event.action
       ? `Action — ${event.action}`
       : "Action Blocked",
+
     description:
       actionResult.message ||
       "Recovery action completed.",
@@ -286,22 +312,21 @@ export const runPipeline = async (
      7. FINAL BUSINESS STATUS
 
      actionStatus = execution state
-     status       = recovery/business state
+
+     status = recovery/business state
   ======================================================= */
 
   switch (actionResult.status) {
     /* -----------------------------------------------------
        SUCCESS
-
-       IMPORTANT:
-       This MUST remain EXECUTED.
-
-       Frontend will therefore hide Execute.
     ----------------------------------------------------- */
 
     case "EXECUTED":
-      event.actionStatus = "EXECUTED";
-      event.status = "Recovery Pending";
+      event.actionStatus =
+        "EXECUTED";
+
+      event.status =
+        "Recovery Pending";
 
       event.outcome =
         `${event.action} executed. Waiting for recovery confirmation.`;
@@ -311,12 +336,17 @@ export const runPipeline = async (
     /* -----------------------------------------------------
        PENDING
 
-       Example: VOICE / ACCOUNT MANAGER
+       Example:
+       VOICE
+       ACCOUNT_MANAGER
     ----------------------------------------------------- */
 
     case "PENDING":
-      event.actionStatus = "PENDING";
-      event.status = "Recovery Pending";
+      event.actionStatus =
+        "PENDING";
+
+      event.status =
+        "Recovery Pending";
 
       event.outcome =
         actionResult.message ||
@@ -327,12 +357,27 @@ export const runPipeline = async (
     /* -----------------------------------------------------
        BLOCKED
 
-       Not executable again automatically.
+       IMPORTANT:
+
+       DO NOT SET:
+
+       event.status = "Recovery Blocked"
+
+       because "Recovery Blocked" is NOT part
+       of EventSchema.status enum.
+
+       Instead:
+
+       status       = In Progress
+       actionStatus = BLOCKED
     ----------------------------------------------------- */
 
     case "BLOCKED":
-      event.actionStatus = "BLOCKED";
-      event.status = "Recovery Blocked";
+      event.actionStatus =
+        "BLOCKED";
+
+      event.status =
+        "In Progress";
 
       event.outcome =
         actionResult.message ||
@@ -343,13 +388,15 @@ export const runPipeline = async (
     /* -----------------------------------------------------
        FAILED
 
-       FAILED is intentionally retryable.
-       Therefore frontend MAY show Execute again.
+       FAILED remains retryable.
     ----------------------------------------------------- */
 
     case "FAILED":
-      event.actionStatus = "FAILED";
-      event.status = "In Progress";
+      event.actionStatus =
+        "FAILED";
+
+      event.status =
+        "In Progress";
 
       event.outcome =
         `Recovery action failed: ${
@@ -366,8 +413,11 @@ export const runPipeline = async (
     ----------------------------------------------------- */
 
     default:
-      event.actionStatus = "FAILED";
-      event.status = "In Progress";
+      event.actionStatus =
+        "FAILED";
+
+      event.status =
+        "In Progress";
 
       event.outcome =
         actionResult.message ||
@@ -387,19 +437,33 @@ export const runPipeline = async (
 
      No runId.
      No room.
+
      Event _id identifies the event.
   ======================================================= */
 
   emitProgress(event, onProgress, {
     stage: "completed",
-    status: event.status,
-    action: event.action,
-    actionStatus: event.actionStatus,
+
+    status:
+      event.status,
+
+    action:
+      event.action,
+
+    actionStatus:
+      event.actionStatus,
+
     recoveredAmount:
       event.recoveredAmount,
-    paymentLink: event.paymentLink,
-    outcome: event.outcome,
-    message: event.actionResult,
+
+    paymentLink:
+      event.paymentLink,
+
+    outcome:
+      event.outcome,
+
+    message:
+      event.actionResult,
   });
 
   return event;
