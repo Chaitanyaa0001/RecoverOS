@@ -1,5 +1,9 @@
 import mongoose from "mongoose";
 
+/* =========================================================
+   TIMELINE
+========================================================= */
+
 const TimelineStepSchema = new mongoose.Schema(
   {
     stage: {
@@ -12,111 +16,188 @@ const TimelineStepSchema = new mongoose.Schema(
         "planning",
         "guardrail",
         "action",
-        "outcome"
+        "outcome",
       ],
-      required: true
+      required: true,
     },
 
     title: {
       type: String,
-      required: true
+      required: true,
     },
 
     time: {
       type: Date,
-      default: Date.now
+      default: Date.now,
     },
 
     description: {
       type: String,
-      required: true
+      required: true,
     },
 
     confidence: {
       type: Number,
       min: 0,
       max: 100,
-      default: null
-    }
+      default: null,
+    },
   },
-  { _id: false }
+  {
+    _id: false,
+  }
 );
+
+/* =========================================================
+   GUARDRAIL
+========================================================= */
 
 const GuardrailSchema = new mongoose.Schema(
   {
     status: {
       type: String,
       enum: ["ALLOWED", "BLOCKED"],
-      required: true
+      required: true,
     },
 
     rule: {
       type: String,
-      required: true
+      required: true,
     },
 
     reason: {
       type: String,
-      required: true
-    }
+      required: true,
+    },
   },
-  { _id: false }
+  {
+    _id: false,
+  }
 );
+
+/* =========================================================
+   CUSTOMER
+========================================================= */
 
 const CustomerSchema = new mongoose.Schema(
   {
-    id: String,
-    name: String,
-    email: String,
-    phone: String
+    id: {
+      type: String,
+      default: null,
+    },
+
+    name: {
+      type: String,
+      default: null,
+    },
+
+    email: {
+      type: String,
+      default: null,
+    },
+
+    phone: {
+      type: String,
+      default: null,
+    },
   },
-  { _id: false }
+  {
+    _id: false,
+  }
 );
+
+/* =========================================================
+   MERCHANT
+========================================================= */
 
 const MerchantSchema = new mongoose.Schema(
   {
-    id: String,
-    name: String
+    id: {
+      type: String,
+      default: null,
+    },
+
+    name: {
+      type: String,
+      default: null,
+    },
   },
-  { _id: false }
+  {
+    _id: false,
+  }
 );
+
+/* =========================================================
+   PAYMENT LINK
+========================================================= */
 
 const PaymentLinkSchema = new mongoose.Schema(
   {
-    linkId: String,
-    url: String,
-    amount: Number,
-    expiresInHours: Number
+    linkId: {
+      type: String,
+      default: null,
+    },
+
+    url: {
+      type: String,
+      default: null,
+    },
+
+    amount: {
+      type: Number,
+      default: null,
+    },
+
+    expiresInHours: {
+      type: Number,
+      default: null,
+    },
   },
-  { _id: false }
+  {
+    _id: false,
+  }
 );
+
+/* =========================================================
+   EVENT
+========================================================= */
 
 const EventSchema = new mongoose.Schema(
   {
+    /*
+     * Permanent event identity.
+     *
+     * NO batchId.
+     * NO runId.
+     */
     _id: {
       type: String,
-      required: true
+      required: true,
     },
 
     merchant: {
       type: MerchantSchema,
-      required: true
+      required: true,
     },
 
     customer: {
       type: CustomerSchema,
-      required: true
+      required: true,
     },
 
     companyName: {
       type: String,
-      default: null
+      default: null,
     },
 
     invoiceNumber: {
       type: String,
-      default: null
+      default: null,
     },
+
+    /* =====================================================
+       EVENT TYPE
+    ===================================================== */
 
     type: {
       type: String,
@@ -125,134 +206,150 @@ const EventSchema = new mongoose.Schema(
         "Checkout Abandonment",
         "Subscription Failure",
         "Overdue Invoice",
-        "B2B Payment Due"
+        "B2B Payment Due",
       ],
-      required: true
+      required: true,
     },
 
     amount: {
       type: Number,
       required: true,
-      min: 0
+      min: 0,
     },
 
     currency: {
       type: String,
-      default: "INR"
+      default: "INR",
     },
 
-    // ==========================
-    // RAW EVENT
-    // ==========================
+    /* =====================================================
+       RAW PAYMENT FAILURE
+    ===================================================== */
 
     errorCode: {
       type: String,
-      default: null
-    },
-
-    retryCount: {
-      type: Number,
-      default: 0
+      default: null,
     },
 
     customerOptedOut: {
       type: Boolean,
-      default: false
+      default: false,
     },
 
-    // ==========================
-    // AI DIAGNOSIS
-    // ==========================
+    /* =====================================================
+       AI DIAGNOSIS
+    ===================================================== */
 
     rootCause: {
       type: String,
-      default: null
+      default: null,
     },
 
     rootCauseLabel: {
       type: String,
-      default: null
+      default: null,
     },
 
     confidence: {
       type: Number,
       min: 0,
       max: 100,
-      default: null
+      default: null,
     },
 
-    // ==========================
-    // AI DECISION
-    // ==========================
+    /* =====================================================
+       AI DECISION
+    ===================================================== */
 
     proposedAction: {
       type: String,
-      default: null
+      default: null,
     },
 
     recommendedAction: {
       type: String,
-      default: null
+      default: null,
     },
 
     actionLabel: {
       type: String,
-      default: null
+      default: null,
     },
 
     actionReason: {
       type: String,
-      default: null
+      default: null,
     },
 
     alternatives: {
       type: [String],
-      default: []
+      default: [],
     },
 
-    // ==========================
-    // GUARDRAIL
-    // ==========================
+    /* =====================================================
+       GUARDRAIL
+    ===================================================== */
 
     guardrail: {
       type: GuardrailSchema,
-      default: null
+      default: null,
     },
 
-    // ==========================
-    // ACTION
-    // ==========================
+    /* =====================================================
+       ACTION
+    ===================================================== */
 
     action: {
       type: String,
-      default: null
+      default: null,
     },
+
+    /*
+     * PENDING
+     *   Eligible for processing.
+     *
+     * PROCESSING
+     *   Atomically claimed by a worker.
+     *
+     * BLOCKED
+     *   Autonomous action blocked.
+     *
+     * EXECUTING
+     *   External action executing.
+     *
+     * EXECUTED
+     *   Action completed.
+     *
+     * FAILED
+     *   Action failed and can be retried.
+     */
 
     actionStatus: {
       type: String,
       enum: [
         "PENDING",
+        "PROCESSING",
         "BLOCKED",
         "EXECUTING",
         "EXECUTED",
-        "FAILED"
+        "FAILED",
       ],
-      default: "PENDING"
+      default: "PENDING",
     },
 
     actionResult: {
-      type: String,
-      default: null
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
     },
 
     paymentLink: {
       type: PaymentLinkSchema,
-      default: null
+      default: null,
     },
 
-    // ==========================
-    // RECOVERY
-    // ==========================
+    /* =====================================================
+       BUSINESS / RECOVERY STATUS
+    ===================================================== */
 
     status: {
       type: String,
@@ -260,65 +357,95 @@ const EventSchema = new mongoose.Schema(
         "In Progress",
         "Recovery Pending",
         "Recovered",
-        "Exhausted"
+        "Exhausted",
       ],
-      default: "In Progress"
+      default: "In Progress",
     },
 
     recoveredAmount: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0,
     },
 
     detectedAt: {
       type: Date,
-      default: Date.now
+      default: Date.now,
     },
 
     resolvedAt: {
       type: Date,
-      default: null
+      default: null,
     },
 
     outcome: {
       type: String,
-      default: null
+      default: null,
     },
 
-    // ==========================
-    // AUDIT / TIMELINE
-    // ==========================
+    /* =====================================================
+       TIMELINE
+    ===================================================== */
 
     timeline: {
       type: [TimelineStepSchema],
-      default: []
+      default: [],
     },
 
-    batchId: {
-      type: String,
-      required: true
-    },
+    /* =====================================================
+       DEMO
+    ===================================================== */
 
     isLiveDemoEvent: {
       type: Boolean,
-      default: false
+      default: false,
     },
 
-    // AI debugging/evidence
+    /* =====================================================
+       AI DEBUGGING
+    ===================================================== */
+
     rawLlmDiagnosis: {
       type: mongoose.Schema.Types.Mixed,
-      default: null
+      default: null,
     },
 
     rawLlmIntervention: {
       type: mongoose.Schema.Types.Mixed,
-      default: null
-    }
+      default: null,
+    },
+
+    testPreset: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
   },
   {
-    timestamps: true
+    timestamps: true,
   }
 );
+
+/* =========================================================
+   INDEXES
+========================================================= */
+
+EventSchema.index({
+  status: 1,
+  actionStatus: 1,
+});
+
+EventSchema.index({
+  action: 1,
+  actionStatus: 1,
+});
+
+EventSchema.index({
+  "merchant.id": 1,
+});
+
+/* =========================================================
+   MODEL
+========================================================= */
 
 const Event =
   mongoose.models.Event ||

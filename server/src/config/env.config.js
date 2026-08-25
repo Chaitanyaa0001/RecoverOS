@@ -3,10 +3,12 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export const env = {
-  PORT: process.env.PORT || 5000,
+  PORT:
+    process.env.PORT || 5000,
 
   NODE_ENV:
-    process.env.NODE_ENV || "development",
+    process.env.NODE_ENV ||
+    "development",
 
   CLIENT_URL:
     process.env.CLIENT_URL,
@@ -14,9 +16,10 @@ export const env = {
   MONGODB_URI:
     process.env.MONGODB_URI,
 
-  // =========================
-  // NVIDIA
-  // =========================
+  DEMO_MODE:
+    String(
+      process.env.DEMO_MODE || "false"
+    ).toLowerCase() === "true",
 
   NVIDIA_API_KEY:
     process.env.NVIDIA_API_KEY,
@@ -29,10 +32,6 @@ export const env = {
     process.env.NVIDIA_BASE_URL ||
     "https://integrate.api.nvidia.com/v1",
 
-  // =========================
-  // BREVO
-  // =========================
-
   BREVO_API_KEY:
     process.env.BREVO_API_KEY,
 
@@ -42,10 +41,6 @@ export const env = {
   BREVO_SENDER_NAME:
     process.env.BREVO_SENDER_NAME ||
     "RecoverJS",
-
-  // =========================
-  // RAZORPAY
-  // =========================
 
   RAZORPAY_KEY_ID:
     process.env.RAZORPAY_KEY_ID,

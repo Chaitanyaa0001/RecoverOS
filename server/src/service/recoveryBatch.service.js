@@ -4,266 +4,245 @@ import {
   runPipeline,
 } from "../ai/pipeline.js";
 
-import {emitBatchEvent,} from "../socket/socketEmitter.js";
+import {
+  emitRecoveryEvent,
+} from "../socket/socketEmitter.js";
 
-export const runBatchPipeline =
-  async (
-    batchId,
-    concurrency = 5
-  ) => {
+/* =========================================================
+   BATCH PIPELINE
+========================================================= */
 
-    const events =
-      await Event.find({
-        batchId,
-        status: "In Progress",
-        actionStatus: "PENDING",
-      })
-        .select("_id")
-        .lean();
-
-    if (!events.length) {
-      emitBatchEvent(batchId, {
-        stage: "batch_completed",
-        status: "COMPLETED",
-        total: 0,
-        completed: 0,
-        successful: 0,
-        failed: 0,
-        message:
-          "No pending events found for this batch.",
-      });
-
-      return {
-        batchId,
-        total: 0,
-        processed: 0,
-        successful: 0,
-        failed: 0,
-        results: [],
-      };
-    }
-
-    let index = 0;
-
-    const results = [];
-
-    /*
-     * =====================================
-     * BATCH STARTED
-     * =====================================
-     */
-
-    emitBatchEvent(batchId, {
-      stage: "batch_started",
-      status: "PROCESSING",
-      total: events.length,
-      completed: 0,
+export const runBatchPipeline = async (
+  eventIds,
+  concurrency = 5
+) => {
+  if (
+    !Array.isArray(eventIds) ||
+    eventIds.length === 0
+  ) {
+    return {
+      total: 0,
+      processed: 0,
       successful: 0,
       failed: 0,
-      message:
-        "RecoverJS batch recovery started.",
-    });
-
-    /*
-     * =====================================
-     * WORKER
-     * =====================================
-     */
-
-    const worker = async () => {
-      while (true) {
-
-        const currentIndex =
-          index++;
-
-        if (
-          currentIndex >=
-          events.length
-        ) {
-          return;
-        }
-
-        const event =
-          events[currentIndex];
-
-        try {
-
-          /*
-           * =================================
-           * EVENT STARTED
-           * =================================
-           */
-
-          emitBatchEvent(batchId, {
-            eventId: event._id,
-            stage: "started",
-            status: "PROCESSING",
-            message:
-              "Recovery pipeline started.",
-          });
-
-          /*
-           * =================================
-           * RUN PIPELINE
-           *
-           * Pass progress callback so every
-           * pipeline stage reaches Socket.IO.
-           * =================================
-           */
-
-          const result =
-            await runPipeline(
-              event._id,
-              (progress) => {
-
-                emitBatchEvent(
-                  batchId,
-                  progress
-                );
-
-              }
-            );
-
-          /*
-           * =================================
-           * SUCCESS
-           * =================================
-           */
-
-          results.push({
-            success: true,
-
-            eventId:
-              event._id,
-
-            status:
-              result.status,
-
-            action:
-              result.action,
-
-            actionStatus:
-              result.actionStatus,
-
-            recoveredAmount:
-              result.recoveredAmount,
-
-            paymentLink:
-              result.paymentLink || null,
-          });
-
-        } catch (error) {
-
-          /*
-           * =================================
-           * EVENT FAILED
-           * =================================
-           */
-
-          emitBatchEvent(batchId, {
-            eventId: event._id,
-            stage: "failed",
-            status: "FAILED",
-            message:
-              error.message,
-          });
-
-          results.push({
-            success: false,
-
-            eventId:
-              event._id,
-
-            error:
-              error.message,
-          });
-        }
-      }
+      results: [],
     };
+  }
 
-    /*
-     * =====================================
-     * CONCURRENCY
-     * =====================================
-     */
+  const uniqueEventIds = [
+    ...new Set(eventIds),
+  ];
 
-    const workerCount =
-      Math.min(
-        Math.max(
-          Number(concurrency) || 5,
-          1
-        ),
-        10,
-        events.length
-      );
+  const workerCount = Math.min(
+    Math.max(
+      Number(concurrency) || 5,
+      1
+    ),
+    10,
+    uniqueEventIds.length
+  );
 
-    const workers =
-      Array.from(
-        {
-          length: workerCount,
+  let processed = 0;
+  let successful = 0;
+  let failed = 0;
+
+  const results = [];
+
+  /* =======================================================
+     ATOMIC CLAIM
+  ======================================================= */
+
+  const claimNextEvent = async () => {
+    return Event.findOneAndUpdate(
+      {
+        _id: {
+          $in: uniqueEventIds,
         },
-        () => worker()
-      );
 
-    await Promise.all(
-      workers
-    );
+        status: "In Progress",
 
-    /*
-     * =====================================
-     * BATCH SUMMARY
-     * =====================================
-     */
+        actionStatus: {
+          $in: [
+            "PENDING",
+            "FAILED",
+          ],
+        },
+      },
 
-    const successful =
-      results.filter(
-        (result) =>
-          result.success
-      ).length;
+      {
+        $set: {
+          actionStatus: "PROCESSING",
+        },
+      },
 
-    const failed =
-      results.filter(
-        (result) =>
-          !result.success
-      ).length;
-
-    /*
-     * =====================================
-     * BATCH COMPLETED
-     * =====================================
-     */
-
-    emitBatchEvent(batchId, {
-      stage: "batch_completed",
-      status: "COMPLETED",
-
-      total:
-        events.length,
-
-      completed:
-        results.length,
-
-      successful,
-
-      failed,
-
-      message:
-        "RecoverJS batch recovery completed.",
-    });
-
-    return {
-      batchId,
-
-      total:
-        events.length,
-
-      processed:
-        results.length,
-
-      successful,
-
-      failed,
-
-      results,
-    };
+      {
+        new: true,
+      }
+    )
+      .select(
+        "_id id status actionStatus"
+      )
+      .lean();
   };
+
+  /* =======================================================
+     WORKER
+  ======================================================= */
+
+  const worker = async () => {
+    while (true) {
+      const event =
+        await claimNextEvent();
+
+      if (!event) {
+        return;
+      }
+
+      try {
+        emitRecoveryEvent({
+          eventId: event._id,
+          eventExternalId: event.id,
+          stage: "started",
+          status: "PROCESSING",
+          actionStatus: "PROCESSING",
+          message:
+            "Recovery pipeline started.",
+        });
+
+        const result =
+          await runPipeline(
+            event._id,
+            (progress) => {
+              emitRecoveryEvent({
+                ...progress,
+                eventId: event._id,
+                eventExternalId:
+                  event.id,
+              });
+            }
+          );
+
+        emitRecoveryEvent({
+          eventId: event._id,
+          eventExternalId: event.id,
+          stage: "completed",
+          status: result.status,
+          action: result.action,
+          actionStatus:
+            result.actionStatus,
+          recoveredAmount:
+            result.recoveredAmount,
+          paymentLink:
+            result.paymentLink,
+          outcome: result.outcome,
+          message:
+            result.actionResult ||
+            "Recovery pipeline completed.",
+        });
+
+        results.push({
+          success: true,
+          eventId: event._id,
+          eventExternalId: event.id,
+          status: result.status,
+          action: result.action,
+          actionStatus:
+            result.actionStatus,
+          recoveredAmount:
+            result.recoveredAmount,
+          paymentLink:
+            result.paymentLink,
+          outcome: result.outcome,
+        });
+
+        successful++;
+      } catch (error) {
+        await Event.findOneAndUpdate(
+          {
+            _id: event._id,
+            actionStatus: "PROCESSING",
+          },
+          {
+            $set: {
+              actionStatus: "FAILED",
+              status: "In Progress",
+              outcome:
+                error?.message ||
+                "Recovery pipeline failed.",
+            },
+          }
+        );
+
+        emitRecoveryEvent({
+          eventId: event._id,
+          eventExternalId: event.id,
+          stage: "error",
+          status: "FAILED",
+          actionStatus: "FAILED",
+          message:
+            error?.message ||
+            "Recovery pipeline failed.",
+        });
+
+        results.push({
+          success: false,
+          eventId: event._id,
+          eventExternalId: event.id,
+          error:
+            error?.message ||
+            "Recovery pipeline failed.",
+        });
+
+        failed++;
+      }
+
+      processed++;
+
+      emitRecoveryEvent({
+        eventId: event._id,
+        eventExternalId: event.id,
+        stage: "progress",
+        processed,
+        total: uniqueEventIds.length,
+        successful,
+        failed,
+      });
+    }
+  };
+
+  /* =======================================================
+     START WORKERS
+  ======================================================= */
+
+  const workers = Array.from(
+    {
+      length: workerCount,
+    },
+    () => worker()
+  );
+
+  await Promise.all(workers);
+
+  /* =======================================================
+     ALL COMPLETED
+  ======================================================= */
+
+  emitRecoveryEvent({
+    stage: "all_completed",
+    status: "COMPLETED",
+    total: uniqueEventIds.length,
+    processed,
+    successful,
+    failed,
+    message:
+      "All eligible recovery events processed.",
+  });
+
+  return {
+    total: uniqueEventIds.length,
+    processed,
+    successful,
+    failed,
+    results,
+  };
+};

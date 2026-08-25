@@ -1,3 +1,5 @@
+import Event from "../models/Events.js";
+
 import {
   runPipeline,
 } from "../ai/pipeline.js";
@@ -6,73 +8,221 @@ import {
   runBatchPipeline,
 } from "../service/recoveryBatch.service.js";
 
-export const runAgentPipeline =
-  async (
-    req,
-    res,
-    next
-  ) => {
-    try {
-      const event =
-        await runPipeline(
-          req.params.id
-        );
+import {
+  emitRecoveryEvent,
+} from "../socket/socketEmitter.js";
 
-      res.status(200).json({
-        success: true,
+/* =========================================================
+   RUN SINGLE EVENT
+========================================================= */
 
-        message:
-          "RecoverJS AI pipeline completed.",
+export const runAgentPipeline = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const eventId = req.params.id;
 
-        event,
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
+    /* =====================================================
+       ATOMIC CLAIM
+    ===================================================== */
 
+    const event =
+      await Event.findOneAndUpdate(
+        {
+          _id: eventId,
 
-export const runBatchAgentPipeline =
-  async (
-    req,
-    res,
-    next
-  ) => {
-    try {
+          status: "In Progress",
 
-      const {
-        batchId,
-        concurrency = 5,
-      } = req.body;
+          actionStatus: {
+            $in: [
+              "PENDING",
+              "FAILED",
+            ],
+          },
+        },
 
-      if (!batchId) {
-        return res.status(400).json({
+        {
+          $set: {
+            actionStatus: "PROCESSING",
+          },
+        },
+
+        {
+          new: true,
+        }
+      )
+        .select(
+          "_id id status actionStatus"
+        )
+        .lean();
+
+    /* =====================================================
+       NOT CLAIMED
+    ===================================================== */
+
+    if (!event) {
+      const existingEvent =
+        await Event.findById(eventId)
+          .select(
+            "_id id status actionStatus"
+          )
+          .lean();
+
+      if (!existingEvent) {
+        return res.status(404).json({
           success: false,
-
-          message:
-            "batchId is required",
+          message: "Event not found.",
         });
       }
 
-      const result =
-        await runBatchPipeline(
-          batchId,
-          Math.min(
-            Number(concurrency) || 5,
-            10
-          )
-        );
-
-      res.status(200).json({
-        success: true,
-
+      return res.status(409).json({
+        success: false,
         message:
-          "Batch recovery pipeline completed.",
-
-        ...result,
+          "Event is already being processed or is not eligible for recovery.",
+        eventId,
+        status: existingEvent.status,
+        actionStatus:
+          existingEvent.actionStatus,
       });
-
-    } catch (error) {
-      next(error);
     }
-  };
+
+    /* =====================================================
+       SOCKET: STARTED
+    ===================================================== */
+
+    emitRecoveryEvent({
+      eventId: event._id,
+      eventExternalId: event.id,
+      stage: "started",
+      status: "PROCESSING",
+      actionStatus: "PROCESSING",
+      message:
+        "Recovery pipeline started.",
+    });
+
+    /* =====================================================
+       START PIPELINE
+    ===================================================== */
+
+    runPipeline(
+      eventId,
+      (progress) => {
+        emitRecoveryEvent({
+          ...progress,
+          eventId,
+          eventExternalId: event.id,
+        });
+      }
+    ).catch(async (error) => {
+      console.error(
+        `Recovery event ${eventId} failed:`,
+        error
+      );
+
+      /*
+       * Release only the PROCESSING claim.
+       */
+      await Event.findOneAndUpdate(
+        {
+          _id: eventId,
+          actionStatus: "PROCESSING",
+        },
+        {
+          $set: {
+            actionStatus: "FAILED",
+            status: "In Progress",
+            outcome:
+              error?.message ||
+              "Recovery pipeline failed.",
+          },
+        }
+      );
+
+      emitRecoveryEvent({
+        eventId,
+        eventExternalId: event.id,
+        stage: "error",
+        status: "FAILED",
+        actionStatus: "FAILED",
+        message:
+          error?.message ||
+          "Recovery pipeline failed.",
+      });
+    });
+
+    return res.status(202).json({
+      success: true,
+      message:
+        "Recovery processing started.",
+      eventId,
+      processingStarted: true,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/* =========================================================
+   RUN MULTIPLE EVENTS
+========================================================= */
+
+export const runBatchAgentPipeline = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const {
+      eventIds,
+      concurrency = 5,
+    } = req.body || {};
+
+    if (
+      !Array.isArray(eventIds) ||
+      eventIds.length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "eventIds must be a non-empty array.",
+      });
+    }
+
+    const uniqueEventIds = [
+      ...new Set(eventIds),
+    ];
+
+    const workerConcurrency = Math.min(
+      Math.max(
+        Number(concurrency) || 5,
+        1
+      ),
+      10
+    );
+
+    runBatchPipeline(
+      uniqueEventIds,
+      workerConcurrency
+    ).catch((error) => {
+      console.error(
+        "Batch recovery failed:",
+        error
+      );
+    });
+
+    return res.status(202).json({
+      success: true,
+      message:
+        "Recovery processing started.",
+      totalRequested:
+        uniqueEventIds.length,
+      concurrency:
+        workerConcurrency,
+      processingStarted: true,
+    });
+  } catch (error) {
+    next(error);
+  }
+};

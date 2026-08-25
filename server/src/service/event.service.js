@@ -1,55 +1,124 @@
 import Event from "../models/Events.js";
 
-export const getAllEvents = async ({page = 1,limit = 20,type,status,batchId,search,} = {}) => {
+/* =========================================================
+   GET ALL EVENTS
+========================================================= */
+
+export const getAllEvents = async ({
+  page = 1,
+  limit = 20,
+  type,
+  status,
+  search,
+} = {}) => {
   const query = {};
+
   if (type) {
     query.type = type;
   }
+
   if (status) {
     query.status = status;
   }
-  if (batchId) {
-    query.batchId = batchId;
-  }
+
   if (search) {
     query.$or = [
-      { _id: { $regex: search, $options: "i" } },
-      { "customer.name": { $regex: search, $options: "i" } },
-      { "customer.email": { $regex: search, $options: "i" } },
-      { "merchant.name": { $regex: search, $options: "i" } },
-      { companyName: { $regex: search, $options: "i" } },
+      {
+        _id: {
+          $regex: search,
+          $options: "i",
+        },
+      },
+      {
+        "customer.name": {
+          $regex: search,
+          $options: "i",
+        },
+      },
+      {
+        "customer.email": {
+          $regex: search,
+          $options: "i",
+        },
+      },
+      {
+        "merchant.name": {
+          $regex: search,
+          $options: "i",
+        },
+      },
+      {
+        companyName: {
+          $regex: search,
+          $options: "i",
+        },
+      },
     ];
   }
-  const skip = (page - 1) * limit;
+
+  const safePage = Math.max(Number(page) || 1, 1);
+  const safeLimit = Math.min(
+    Math.max(Number(limit) || 20, 1),
+    100
+  );
+
+  const skip = (safePage - 1) * safeLimit;
+
   const [events, total] = await Promise.all([
     Event.find(query)
       .sort({ detectedAt: -1 })
       .skip(skip)
-      .limit(limit)
+      .limit(safeLimit)
       .lean(),
+
     Event.countDocuments(query),
   ]);
 
-  return {events,pagination: {page,limit,total,totalPages: Math.ceil(total / limit),hasNextPage: page * limit < total,hasPreviousPage: page > 1,
+  return {
+    events,
+
+    pagination: {
+      page: safePage,
+      limit: safeLimit,
+      total,
+      totalPages: Math.ceil(total / safeLimit),
+      hasNextPage: safePage * safeLimit < total,
+      hasPreviousPage: safePage > 1,
     },
   };
 };
+
+/* =========================================================
+   GET EVENT
+========================================================= */
 
 export const getEventById = async (eventId) => {
   return Event.findById(eventId).lean();
 };
 
+/* =========================================================
+   CREATE EVENT
+========================================================= */
+
 export const createEvent = async (eventData) => {
-  const existingEvent = await Event.findById(eventData._id);
+  if (!eventData?._id) {
+    throw Object.assign(
+      new Error("Event _id is required."),
+      { statusCode: 400 }
+    );
+  }
+
+  const existingEvent = await Event.findById(
+    eventData._id
+  );
 
   if (existingEvent) {
-    const error = new Error(
-      `Event ${eventData._id} already exists`
+    throw Object.assign(
+      new Error(
+        `Event ${eventData._id} already exists`
+      ),
+      { statusCode: 409 }
     );
-
-    error.statusCode = 409;
-
-    throw error;
   }
 
   const event = await Event.create(eventData);
@@ -57,7 +126,14 @@ export const createEvent = async (eventData) => {
   return event.toObject();
 };
 
-export const updateEvent = async (eventId, updateData) => {
+/* =========================================================
+   UPDATE
+========================================================= */
+
+export const updateEvent = async (
+  eventId,
+  updateData
+) => {
   return Event.findByIdAndUpdate(
     eventId,
     updateData,
@@ -68,15 +144,34 @@ export const updateEvent = async (eventId, updateData) => {
   ).lean();
 };
 
+/* =========================================================
+   DELETE
+========================================================= */
+
 export const deleteEvent = async (eventId) => {
   return Event.findByIdAndDelete(eventId).lean();
 };
+
+/* =========================================================
+   DELETE ALL
+========================================================= */
 
 export const deleteAllEvents = async () => {
   return Event.deleteMany({});
 };
 
-export const seedEvents = async (events, replaceExisting = false) => {
+/* =========================================================
+   SEED
+========================================================= */
+
+export const seedEvents = async (
+  events,
+  replaceExisting = false
+) => {
+  if (!Array.isArray(events) || events.length === 0) {
+    return [];
+  }
+
   if (replaceExisting) {
     await Event.deleteMany({});
   }

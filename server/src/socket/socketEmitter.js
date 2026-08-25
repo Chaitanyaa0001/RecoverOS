@@ -1,26 +1,15 @@
-import { io } from "../server.js";
+  import { io } from "../server.js";
 
-export const emitBatchEvent =
-  (
-    batchId,
-    data
-  ) => {
-
-    if (!batchId) {
+  export const emitRecoveryEvent = (data) => {
+    if (!data?.eventId && data?.stage !== "all_completed") {
+      console.warn(
+        "emitRecoveryEvent called without eventId"
+      );
       return;
     }
 
-    io.to(
-      `batch:${batchId}`
-    ).emit(
-      "batch:event",
-      {
-        batchId,
-
-        ...data,
-
-        timestamp:
-          new Date(),
-      }
-    );
+    io.emit("recovery:event", {
+      ...data,
+      timestamp: new Date().toISOString(),
+    });
   };

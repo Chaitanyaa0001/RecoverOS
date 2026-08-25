@@ -202,8 +202,7 @@ export default function VoiceRecoveryModal({
               >
 
                 <div
-                  className={`
-                    max-w-[80%] rounded-lg px-3 py-2
+                  className={` max-w-[80%] rounded-lg px-3 py-2
                     ${
                       message.speaker ===
                       "Agent"

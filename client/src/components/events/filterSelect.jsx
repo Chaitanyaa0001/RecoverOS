@@ -5,7 +5,7 @@ import { ChevronDown } from "lucide-react";
 export default function FilterSelect({
   label,
   value,
-  options,
+  options = [],
   onChange,
 }) {
   return (
@@ -19,21 +19,23 @@ export default function FilterSelect({
 
         <select
           value={value}
-          onChange={(e) =>
-            onChange(e.target.value)
+          onChange={(event) =>
+            onChange(
+              event.target.value
+            )
           }
           className="h-9 w-full min-w-0 appearance-none rounded-md border border-slate-200 bg-white px-3 pr-8 text-[10px] text-slate-600 outline-none focus:border-emerald-400"
         >
-
-          {options.map((option) => (
-            <option
-              key={option}
-              value={option}
-            >
-              {option}
-            </option>
-          ))}
-
+          {options.map(
+            (option) => (
+              <option
+                key={option}
+                value={option}
+              >
+                {option}
+              </option>
+            )
+          )}
         </select>
 
         <ChevronDown

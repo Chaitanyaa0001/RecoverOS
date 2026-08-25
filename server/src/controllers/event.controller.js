@@ -12,23 +12,32 @@ import {
   generateSyntheticBatch,
 } from "../utils/generateSyntheticEvents.js";
 
-export const listEvents = async (req, res, next) => {
+/* =========================================================
+   LIST
+========================================================= */
+
+export const listEvents = async (
+  req,
+  res,
+  next
+) => {
   try {
     const {
       page = 1,
       limit = 20,
       type,
       status,
-      batchId,
       search,
     } = req.query;
 
     const result = await getAllEvents({
       page: Number(page),
-      limit: Math.min(Number(limit), 100),
+      limit: Math.min(
+        Number(limit) || 20,
+        100
+      ),
       type,
       status,
-      batchId,
       search,
     });
 
@@ -41,9 +50,19 @@ export const listEvents = async (req, res, next) => {
   }
 };
 
-export const getEvent = async (req, res, next) => {
+/* =========================================================
+   GET
+========================================================= */
+
+export const getEvent = async (
+  req,
+  res,
+  next
+) => {
   try {
-    const event = await getEventById(req.params.id);
+    const event = await getEventById(
+      req.params.id
+    );
 
     if (!event) {
       return res.status(404).json({
@@ -61,9 +80,19 @@ export const getEvent = async (req, res, next) => {
   }
 };
 
-export const createNewEvent = async (req, res, next) => {
+/* =========================================================
+   CREATE
+========================================================= */
+
+export const createNewEvent = async (
+  req,
+  res,
+  next
+) => {
   try {
-    const event = await createEvent(req.body);
+    const event = await createEvent(
+      req.body
+    );
 
     res.status(201).json({
       success: true,
@@ -75,7 +104,15 @@ export const createNewEvent = async (req, res, next) => {
   }
 };
 
-export const updateExistingEvent = async (req, res, next) => {
+/* =========================================================
+   UPDATE
+========================================================= */
+
+export const updateExistingEvent = async (
+  req,
+  res,
+  next
+) => {
   try {
     const event = await updateEvent(
       req.params.id,
@@ -99,9 +136,19 @@ export const updateExistingEvent = async (req, res, next) => {
   }
 };
 
-export const deleteExistingEvent = async (req, res, next) => {
+/* =========================================================
+   DELETE
+========================================================= */
+
+export const deleteExistingEvent = async (
+  req,
+  res,
+  next
+) => {
   try {
-    const event = await deleteEvent(req.params.id);
+    const event = await deleteEvent(
+      req.params.id
+    );
 
     if (!event) {
       return res.status(404).json({
@@ -120,7 +167,15 @@ export const deleteExistingEvent = async (req, res, next) => {
   }
 };
 
-export const clearEvents = async (req, res, next) => {
+/* =========================================================
+   CLEAR
+========================================================= */
+
+export const clearEvents = async (
+  req,
+  res,
+  next
+) => {
   try {
     const result = await deleteAllEvents();
 
@@ -134,25 +189,34 @@ export const clearEvents = async (req, res, next) => {
   }
 };
 
-export const seedSyntheticEvents = async (req, res, next) => {
+/* =========================================================
+   SEED SYNTHETIC EVENTS
+========================================================= */
+
+export const seedSyntheticEvents = async (
+  req,
+  res,
+  next
+) => {
   try {
     const count = Math.min(
-      Math.max(Number(req.body.count) || 10, 1),
+      Math.max(
+        Number(req.body?.count) || 10,
+        1
+      ),
       500
     );
 
-    const batchId =
-      req.body.batchId || `batch_${Date.now()}`;
+    const isLiveDemoEvent = Boolean(
+      req.body?.isLiveDemoEvent
+    );
 
-    const isLiveDemoEvent =
-      Boolean(req.body.isLiveDemoEvent);
-
-    const replaceExisting =
-      Boolean(req.body.replaceExisting);
+    const replaceExisting = Boolean(
+      req.body?.replaceExisting
+    );
 
     const events = generateSyntheticBatch(
       count,
-      batchId,
       isLiveDemoEvent
     );
 
@@ -163,8 +227,8 @@ export const seedSyntheticEvents = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: "Synthetic events created successfully",
-      batchId,
+      message:
+        "Synthetic events created successfully",
       count: insertedEvents.length,
       events: insertedEvents,
     });

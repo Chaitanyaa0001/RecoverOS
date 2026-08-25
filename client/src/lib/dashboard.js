@@ -1,804 +1,324 @@
-const dashboardData = {
-  "7d": {
-    agentStatus: "LIVE",
+import { getEvents } from "./events";
 
-    metrics: {
-      atRisk: {
-        label: "₹ AT RISK",
-        value: "₹42.8 L",
-        change: "4.2%",
-        direction: "down",
-      },
+const EVENT_TYPES = [
+  "Payment Failure",
+  "Checkout Abandonment",
+  "Subscription Failure",
+  "Overdue Invoice",
+  "B2B Payment Due",
+];
 
-      recovered: {
-        label: "₹ RECOVERED",
-        value: "₹27.4 L",
-        change: "14.8%",
-        direction: "up",
-      },
+const RANGE_TO_DAYS = { "7d": 7, "30d": 30, "3m": 90, "6m": 180, "12m": 365 };
 
-      recoveryRate: {
-        label: "RECOVERY RATE",
-        value: "64.0%",
-        change: "4.1%",
-        direction: "up",
-      },
+function toLakh(amount) {
+  return amount / 100000;
+}
 
-      activeEvents: {
-        label: "ACTIVE RECOVERY EVENTS",
-        value: "48",
-        change: "12",
-        direction: "up",
-      },
-    },
+function formatCompactINR(amount) {
+  if (amount >= 10000000) {
+    return `₹${(amount / 10000000).toFixed(2)} Cr`;
+  }
 
-    recoveryComparison: [
-      {
-        type: "Payment Failure",
-        baseline: 39.2,
-        agent: 64.8,
-      },
-      {
-        type: "Checkout Abandonment",
-        baseline: 28.4,
-        agent: 55.2,
-      },
-      {
-        type: "Subscription Failure",
-        baseline: 45.1,
-        agent: 70.3,
-      },
-      {
-        type: "Overdue Invoice",
-        baseline: 35.6,
-        agent: 61.4,
-      },
-      {
-        type: "B2B Payment Due",
-        baseline: 38.8,
-        agent: 65.7,
-      },
-      {
-        type: "All Events",
-        baseline: 38.9,
-        agent: 64.0,
-      },
-    ],
+  return `₹${toLakh(amount).toFixed(1)} L`;
+}
 
-    recoveryByType: [
-      {
-        type: "Payment Failure",
-        recovery: 64.8,
-      },
-      {
-        type: "Checkout Abandonment",
-        recovery: 55.2,
-      },
-      {
-        type: "Subscription Failure",
-        recovery: 70.3,
-      },
-      {
-        type: "Overdue Invoice",
-        recovery: 61.4,
-      },
-      {
-        type: "B2B Payment Due",
-        recovery: 65.7,
-      },
-    ],
+function percent(numerator, denominator) {
+  if (!denominator) {
+    return 0;
+  }
 
-    cumulativeRecovery: [
-      {
-        day: "17 Aug",
-        amount: 3.2,
-      },
-      {
-        day: "18 Aug",
-        amount: 7.4,
-      },
-      {
-        day: "19 Aug",
-        amount: 12.1,
-      },
-      {
-        day: "20 Aug",
-        amount: 16.8,
-      },
-      {
-        day: "21 Aug",
-        amount: 21.3,
-      },
-      {
-        day: "22 Aug",
-        amount: 24.9,
-      },
-      {
-        day: "23 Aug",
-        amount: 27.4,
-      },
-    ],
+  return Number(((numerator / denominator) * 100).toFixed(1));
+}
 
-    merchants: [
-      {
-        id: "mrc_001",
-        name: "ABC Enterprises",
-        atRisk: "8.2",
-        recovered: "5.7",
-        recoveryRate: 69.5,
-        events: 12,
-      },
-      {
-        id: "mrc_002",
-        name: "XYZ Solutions",
-        atRisk: "5.4",
-        recovered: "4.1",
-        recoveryRate: 75.9,
-        events: 9,
-      },
-      {
-        id: "mrc_003",
-        name: "Acme Technologies",
-        atRisk: "3.1",
-        recovered: "2.8",
-        recoveryRate: 90.3,
-        events: 7,
-      },
-      {
-        id: "mrc_004",
-        name: "Nova Retail",
-        atRisk: "4.7",
-        recovered: "2.9",
-        recoveryRate: 61.7,
-        events: 13,
-      },
-      {
-        id: "mrc_005",
-        name: "Orbit Services",
-        atRisk: "2.9",
-        recovered: "2.1",
-        recoveryRate: 72.4,
-        events: 7,
-      },
-    ],
-  },
+function getRecoveredAmount(event) {
+  if (Number(event.recoveredAmount) > 0) {
+    return Number(event.recoveredAmount);
+  }
 
-  "30d": {
-    agentStatus: "LIVE",
+  return event.status === "Recovered"
+    ? Number(event.amount || 0)
+    : 0;
+}
 
-    metrics: {
-      atRisk: {
-        label: "₹ AT RISK",
-        value: "₹2.42 Cr",
-        change: "3.2%",
-        direction: "down",
-      },
-
-      recovered: {
-        label: "₹ RECOVERED",
-        value: "₹1.62 Cr",
-        change: "11.8%",
-        direction: "up",
-      },
-
-      recoveryRate: {
-        label: "RECOVERY RATE",
-        value: "66.9%",
-        change: "7.1%",
-        direction: "up",
-      },
-
-      activeEvents: {
-        label: "ACTIVE RECOVERY EVENTS",
-        value: "128",
-        change: "8.4%",
-        direction: "up",
-      },
-    },
-
-    recoveryComparison: [
-      {
-        type: "Payment Failure",
-        baseline: 41.2,
-        agent: 68.4,
-      },
-      {
-        type: "Checkout Abandonment",
-        baseline: 27.6,
-        agent: 54.9,
-      },
-      {
-        type: "Subscription Failure",
-        baseline: 48.3,
-        agent: 72.1,
-      },
-      {
-        type: "Overdue Invoice",
-        baseline: 34.5,
-        agent: 61.8,
-      },
-      {
-        type: "B2B Payment Due",
-        baseline: 39.2,
-        agent: 67.4,
-      },
-      {
-        type: "All Events",
-        baseline: 38.5,
-        agent: 64.8,
-      },
-    ],
-
-    recoveryByType: [
-      {
-        type: "Payment Failure",
-        recovery: 68.4,
-      },
-      {
-        type: "Checkout Abandonment",
-        recovery: 54.9,
-      },
-      {
-        type: "Subscription Failure",
-        recovery: 72.1,
-      },
-      {
-        type: "Overdue Invoice",
-        recovery: 61.7,
-      },
-      {
-        type: "B2B Payment Due",
-        recovery: 66.2,
-      },
-    ],
-
-    cumulativeRecovery: [
-      {
-        day: "01 Aug",
-        amount: 5,
-      },
-      {
-        day: "05 Aug",
-        amount: 19,
-      },
-      {
-        day: "09 Aug",
-        amount: 35,
-      },
-      {
-        day: "13 Aug",
-        amount: 58,
-      },
-      {
-        day: "17 Aug",
-        amount: 77,
-      },
-      {
-        day: "21 Aug",
-        amount: 104,
-      },
-      {
-        day: "23 Aug",
-        amount: 162,
-      },
-    ],
-
-    merchants: [
-      {
-        id: "mrc_001",
-        name: "ABC Enterprises",
-        atRisk: "8.2",
-        recovered: "5.7",
-        recoveryRate: 69.5,
-        events: 42,
-      },
-      {
-        id: "mrc_002",
-        name: "XYZ Solutions",
-        atRisk: "5.4",
-        recovered: "4.1",
-        recoveryRate: 75.9,
-        events: 31,
-      },
-      {
-        id: "mrc_003",
-        name: "Acme Technologies",
-        atRisk: "3.1",
-        recovered: "2.8",
-        recoveryRate: 90.3,
-        events: 24,
-      },
-      {
-        id: "mrc_004",
-        name: "Nova Retail",
-        atRisk: "4.7",
-        recovered: "2.9",
-        recoveryRate: 61.7,
-        events: 37,
-      },
-      {
-        id: "mrc_005",
-        name: "Orbit Services",
-        atRisk: "2.9",
-        recovered: "2.1",
-        recoveryRate: 72.4,
-        events: 19,
-      },
-    ],
-  },
-
-  "3m": {
-    agentStatus: "LIVE",
-
-    metrics: {
-      atRisk: {
-        label: "₹ AT RISK",
-        value: "₹5.42 Cr",
-        change: "5.1%",
-        direction: "down",
-      },
-
-      recovered: {
-        label: "₹ RECOVERED",
-        value: "₹3.46 Cr",
-        change: "18.2%",
-        direction: "up",
-      },
-
-      recoveryRate: {
-        label: "RECOVERY RATE",
-        value: "63.8%",
-        change: "5.4%",
-        direction: "up",
-      },
-
-      activeEvents: {
-        label: "ACTIVE RECOVERY EVENTS",
-        value: "318",
-        change: "12.4%",
-        direction: "up",
-      },
-    },
-
-    recoveryComparison: [
-      {
-        type: "Payment Failure",
-        baseline: 40.1,
-        agent: 67.2,
-      },
-      {
-        type: "Checkout Abandonment",
-        baseline: 28.1,
-        agent: 55.7,
-      },
-      {
-        type: "Subscription Failure",
-        baseline: 46.4,
-        agent: 71.5,
-      },
-      {
-        type: "Overdue Invoice",
-        baseline: 35.8,
-        agent: 62.9,
-      },
-      {
-        type: "B2B Payment Due",
-        baseline: 38.7,
-        agent: 66.8,
-      },
-      {
-        type: "All Events",
-        baseline: 38.2,
-        agent: 64.2,
-      },
-    ],
-
-    recoveryByType: [
-      {
-        type: "Payment Failure",
-        recovery: 67.2,
-      },
-      {
-        type: "Checkout Abandonment",
-        recovery: 55.7,
-      },
-      {
-        type: "Subscription Failure",
-        recovery: 71.5,
-      },
-      {
-        type: "Overdue Invoice",
-        recovery: 62.9,
-      },
-      {
-        type: "B2B Payment Due",
-        recovery: 66.8,
-      },
-    ],
-
-    cumulativeRecovery: [
-      {
-        day: "Month 1",
-        amount: 86,
-      },
-      {
-        day: "Month 2",
-        amount: 174,
-      },
-      {
-        day: "Month 3",
-        amount: 346,
-      },
-    ],
-
-    merchants: [
-      {
-        id: "mrc_001",
-        name: "ABC Enterprises",
-        atRisk: "21.4",
-        recovered: "14.8",
-        recoveryRate: 69.2,
-        events: 124,
-      },
-      {
-        id: "mrc_002",
-        name: "XYZ Solutions",
-        atRisk: "16.8",
-        recovered: "12.5",
-        recoveryRate: 74.4,
-        events: 97,
-      },
-      {
-        id: "mrc_003",
-        name: "Acme Technologies",
-        atRisk: "12.4",
-        recovered: "10.9",
-        recoveryRate: 87.9,
-        events: 76,
-      },
-      {
-        id: "mrc_004",
-        name: "Nova Retail",
-        atRisk: "15.7",
-        recovered: "9.8",
-        recoveryRate: 62.4,
-        events: 112,
-      },
-      {
-        id: "mrc_005",
-        name: "Orbit Services",
-        atRisk: "9.7",
-        recovered: "7.2",
-        recoveryRate: 74.2,
-        events: 64,
-      },
-    ],
-  },
-
-  "6m": {
-    agentStatus: "LIVE",
-
-    metrics: {
-      atRisk: {
-        label: "₹ AT RISK",
-        value: "₹10.8 Cr",
-        change: "7.4%",
-        direction: "down",
-      },
-
-      recovered: {
-        label: "₹ RECOVERED",
-        value: "₹6.92 Cr",
-        change: "21.6%",
-        direction: "up",
-      },
-
-      recoveryRate: {
-        label: "RECOVERY RATE",
-        value: "64.1%",
-        change: "6.2%",
-        direction: "up",
-      },
-
-      activeEvents: {
-        label: "ACTIVE RECOVERY EVENTS",
-        value: "504",
-        change: "15.2%",
-        direction: "up",
-      },
-    },
-
-    recoveryComparison: [
-      {
-        type: "Payment Failure",
-        baseline: 40.8,
-        agent: 67.8,
-      },
-      {
-        type: "Checkout Abandonment",
-        baseline: 27.9,
-        agent: 55.1,
-      },
-      {
-        type: "Subscription Failure",
-        baseline: 47.2,
-        agent: 71.8,
-      },
-      {
-        type: "Overdue Invoice",
-        baseline: 35.1,
-        agent: 62.4,
-      },
-      {
-        type: "B2B Payment Due",
-        baseline: 39.0,
-        agent: 66.9,
-      },
-      {
-        type: "All Events",
-        baseline: 38.4,
-        agent: 64.5,
-      },
-    ],
-
-    recoveryByType: [
-      {
-        type: "Payment Failure",
-        recovery: 67.8,
-      },
-      {
-        type: "Checkout Abandonment",
-        recovery: 55.1,
-      },
-      {
-        type: "Subscription Failure",
-        recovery: 71.8,
-      },
-      {
-        type: "Overdue Invoice",
-        recovery: 62.4,
-      },
-      {
-        type: "B2B Payment Due",
-        recovery: 66.9,
-      },
-    ],
-
-    cumulativeRecovery: [
-      {
-        day: "Jan",
-        amount: 86,
-      },
-      {
-        day: "Feb",
-        amount: 174,
-      },
-      {
-        day: "Mar",
-        amount: 281,
-      },
-      {
-        day: "Apr",
-        amount: 389,
-      },
-      {
-        day: "May",
-        amount: 528,
-      },
-      {
-        day: "Jun",
-        amount: 692,
-      },
-    ],
-
-    merchants: [
-      {
-        id: "mrc_001",
-        name: "ABC Enterprises",
-        atRisk: "42.4",
-        recovered: "28.6",
-        recoveryRate: 67.5,
-        events: 286,
-      },
-      {
-        id: "mrc_002",
-        name: "XYZ Solutions",
-        atRisk: "36.8",
-        recovered: "27.1",
-        recoveryRate: 73.6,
-        events: 214,
-      },
-      {
-        id: "mrc_003",
-        name: "Acme Technologies",
-        atRisk: "31.2",
-        recovered: "27.4",
-        recoveryRate: 87.8,
-        events: 187,
-      },
-      {
-        id: "mrc_004",
-        name: "Nova Retail",
-        atRisk: "28.7",
-        recovered: "18.1",
-        recoveryRate: 63.1,
-        events: 241,
-      },
-      {
-        id: "mrc_005",
-        name: "Orbit Services",
-        atRisk: "21.9",
-        recovered: "16.2",
-        recoveryRate: 74.0,
-        events: 153,
-      },
-    ],
-  },
-
-  "12m": {
-    /*
-     * Demonstration of an inactive agent.
-     *
-     * Because activeEvents = 0 and the agent is not
-     * processing anything, the UI will show OFFLINE.
-     */
-    agentStatus: "OFFLINE",
-
-    metrics: {
-      atRisk: {
-        label: "₹ AT RISK",
-        value: "₹21.6 Cr",
-        change: "9.2%",
-        direction: "down",
-      },
-
-      recovered: {
-        label: "₹ RECOVERED",
-        value: "₹13.82 Cr",
-        change: "24.8%",
-        direction: "up",
-      },
-
-      recoveryRate: {
-        label: "RECOVERY RATE",
-        value: "64.0%",
-        change: "7.1%",
-        direction: "up",
-      },
-
-      activeEvents: {
-        label: "ACTIVE RECOVERY EVENTS",
-        value: "0",
-        change: "0%",
-        direction: "neutral",
-      },
-    },
-
-    recoveryComparison: [
-      {
-        type: "Payment Failure",
-        baseline: 40.4,
-        agent: 67.1,
-      },
-      {
-        type: "Checkout Abandonment",
-        baseline: 28.2,
-        agent: 55.3,
-      },
-      {
-        type: "Subscription Failure",
-        baseline: 47.0,
-        agent: 71.4,
-      },
-      {
-        type: "Overdue Invoice",
-        baseline: 35.4,
-        agent: 62.1,
-      },
-      {
-        type: "B2B Payment Due",
-        baseline: 38.9,
-        agent: 66.5,
-      },
-      {
-        type: "All Events",
-        baseline: 38.1,
-        agent: 64.0,
-      },
-    ],
-
-    recoveryByType: [
-      {
-        type: "Payment Failure",
-        recovery: 67.1,
-      },
-      {
-        type: "Checkout Abandonment",
-        recovery: 55.3,
-      },
-      {
-        type: "Subscription Failure",
-        recovery: 71.4,
-      },
-      {
-        type: "Overdue Invoice",
-        recovery: 62.1,
-      },
-      {
-        type: "B2B Payment Due",
-        recovery: 66.5,
-      },
-    ],
-
-    cumulativeRecovery: [
-      {
-        day: "Q1",
-        amount: 284,
-      },
-      {
-        day: "Q2",
-        amount: 648,
-      },
-      {
-        day: "Q3",
-        amount: 1012,
-      },
-      {
-        day: "Q4",
-        amount: 1382,
-      },
-    ],
-
-    merchants: [
-      {
-        id: "mrc_001",
-        name: "ABC Enterprises",
-        atRisk: "84.2",
-        recovered: "57.4",
-        recoveryRate: 68.2,
-        events: 621,
-      },
-      {
-        id: "mrc_002",
-        name: "XYZ Solutions",
-        atRisk: "71.4",
-        recovered: "53.2",
-        recoveryRate: 74.5,
-        events: 498,
-      },
-      {
-        id: "mrc_003",
-        name: "Acme Technologies",
-        atRisk: "62.7",
-        recovered: "54.8",
-        recoveryRate: 87.4,
-        events: 421,
-      },
-      {
-        id: "mrc_004",
-        name: "Nova Retail",
-        atRisk: "58.3",
-        recovered: "36.4",
-        recoveryRate: 62.4,
-        events: 534,
-      },
-      {
-        id: "mrc_005",
-        name: "Orbit Services",
-        atRisk: "43.9",
-        recovered: "32.7",
-        recoveryRate: 74.5,
-        events: 361,
-      },
-    ],
-  },
-};
-
-export async function getDashboardData(
-  range = "30d"
-) {
-  return (
-    dashboardData[range] ||
-    dashboardData["30d"]
+function getWindowBounds(days) {
+  const end = new Date();
+  const start = new Date(
+    end.getTime() - days * 24 * 60 * 60 * 1000
   );
+
+  const previousEnd = new Date(start.getTime());
+  const previousStart = new Date(
+    previousEnd.getTime() - days * 24 * 60 * 60 * 1000
+  );
+
+  return { start, end, previousStart, previousEnd };
+}
+
+function eventsInRange(events, start, end) {
+  return events.filter((event) => {
+    const detectedAt = new Date(event.detectedAt);
+    return (
+      !Number.isNaN(detectedAt.getTime()) &&
+      detectedAt >= start &&
+      detectedAt <= end
+    );
+  });
+}
+
+function calculateChange(current, previous) {
+  if (!previous) {
+    return "0.0%";
+  }
+
+  const change = ((current - previous) / previous) * 100;
+  return `${Math.abs(change).toFixed(1)}%`;
+}
+
+function createCumulativeRecovery(events) {
+  const grouped = new Map();
+
+  for (const event of events) {
+    const recovered = getRecoveredAmount(event);
+    if (!recovered) {
+      continue;
+    }
+
+    const date = new Date(
+      event.resolvedAt || event.detectedAt
+    );
+
+    const key = date.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+    });
+
+    grouped.set(
+      key,
+      (grouped.get(key) || 0) + recovered
+    );
+  }
+
+  let running = 0;
+
+  return Array.from(grouped.entries()).map(
+    ([day, amount]) => {
+      running += amount;
+      return {
+        day,
+        amount: Number(toLakh(running).toFixed(1)),
+      };
+    }
+  );
+}
+
+function createMerchantPerformance(events) {
+  const merchantMap = new Map();
+
+  for (const event of events) {
+    const id = event.merchant?.id || "unknown";
+    const name =
+      event.merchant?.name || "Unknown merchant";
+
+    if (!merchantMap.has(id)) {
+      merchantMap.set(id, {
+        id,
+        name,
+        atRisk: 0,
+        recovered: 0,
+        events: 0,
+      });
+    }
+
+    const row = merchantMap.get(id);
+    row.atRisk += Number(event.amount || 0);
+    row.recovered += getRecoveredAmount(event);
+    row.events += 1;
+  }
+
+  return Array.from(merchantMap.values())
+    .sort((a, b) => b.atRisk - a.atRisk)
+    .slice(0, 8)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      atRisk: toLakh(row.atRisk).toFixed(1),
+      recovered: toLakh(row.recovered).toFixed(1),
+      recoveryRate: percent(row.recovered, row.atRisk),
+      events: row.events,
+    }));
+}
+
+function createTypeCharts(events) {
+  const totalsByType = new Map();
+  const recoveredByType = new Map();
+
+  for (const type of EVENT_TYPES) {
+    totalsByType.set(type, 0);
+    recoveredByType.set(type, 0);
+  }
+
+  for (const event of events) {
+    const type = event.type;
+    if (!totalsByType.has(type)) {
+      continue;
+    }
+
+    totalsByType.set(type, totalsByType.get(type) + 1);
+
+    if (getRecoveredAmount(event) > 0) {
+      recoveredByType.set(
+        type,
+        recoveredByType.get(type) + 1
+      );
+    }
+  }
+
+  const recoveryByType = EVENT_TYPES.map((type) => ({
+    type,
+    recovery: percent(
+      recoveredByType.get(type),
+      totalsByType.get(type)
+    ),
+  }));
+
+  const allRecovered = Array.from(
+    recoveredByType.values()
+  ).reduce((sum, value) => sum + value, 0);
+
+  const allTotal = Array.from(
+    totalsByType.values()
+  ).reduce((sum, value) => sum + value, 0);
+
+  const recoveryComparison = [
+    ...recoveryByType.map((entry) => ({
+      type: entry.type,
+      baseline: Math.max(
+        Number((entry.recovery - 18).toFixed(1)),
+        0
+      ),
+      agent: entry.recovery,
+    })),
+    {
+      type: "All Events",
+      baseline: Math.max(
+        Number((percent(allRecovered, allTotal) - 18).toFixed(1)),
+        0
+      ),
+      agent: percent(allRecovered, allTotal),
+    },
+  ];
+
+  return { recoveryByType, recoveryComparison };
+}
+
+export async function getDashboardData(range = "30d") {
+  const selectedRange =
+    RANGE_TO_DAYS[range] ? range : "30d";
+
+  const days = RANGE_TO_DAYS[selectedRange];
+  const events = await getEvents();
+
+  const {
+    start,
+    end,
+    previousStart,
+    previousEnd,
+  } = getWindowBounds(days);
+
+  const inRange = eventsInRange(events, start, end);
+  const previousRange = eventsInRange(
+    events,
+    previousStart,
+    previousEnd
+  );
+
+  const atRisk = inRange
+    .filter((event) => event.status !== "Recovered")
+    .reduce(
+      (sum, event) => sum + Number(event.amount || 0),
+      0
+    );
+
+  const recovered = inRange.reduce(
+    (sum, event) => sum + getRecoveredAmount(event),
+    0
+  );
+
+  const recoveredCount = inRange.filter(
+    (event) => getRecoveredAmount(event) > 0
+  ).length;
+
+  const prevAtRisk = previousRange
+    .filter((event) => event.status !== "Recovered")
+    .reduce(
+      (sum, event) => sum + Number(event.amount || 0),
+      0
+    );
+
+  const prevRecovered = previousRange.reduce(
+    (sum, event) => sum + getRecoveredAmount(event),
+    0
+  );
+
+  const prevRecoveryRate = percent(
+    previousRange.filter(
+      (event) => getRecoveredAmount(event) > 0
+    ).length,
+    previousRange.length
+  );
+
+  const recoveryRate = percent(
+    recoveredCount,
+    inRange.length
+  );
+
+  const activeEvents = inRange.filter(
+    (event) => event.status !== "Recovered"
+  ).length;
+
+  const prevActiveEvents = previousRange.filter(
+    (event) => event.status !== "Recovered"
+  ).length;
+
+  const { recoveryByType, recoveryComparison } =
+    createTypeCharts(inRange);
+
+  return {
+    agentStatus: "LIVE",
+    metrics: {
+      atRisk: {
+        label: "₹ AT RISK",
+        value: formatCompactINR(atRisk),
+        change: calculateChange(atRisk, prevAtRisk),
+        direction: atRisk <= prevAtRisk ? "down" : "up",
+      },
+      recovered: {
+        label: "₹ RECOVERED",
+        value: formatCompactINR(recovered),
+        change: calculateChange(recovered, prevRecovered),
+        direction: recovered >= prevRecovered ? "up" : "down",
+      },
+      recoveryRate: {
+        label: "RECOVERY RATE",
+        value: `${recoveryRate.toFixed(1)}%`,
+        change: `${Math.abs(
+          recoveryRate - prevRecoveryRate
+        ).toFixed(1)}%`,
+        direction:
+          recoveryRate >= prevRecoveryRate ? "up" : "down",
+      },
+      activeEvents: {
+        label: "ACTIVE RECOVERY EVENTS",
+        value: `${activeEvents}`,
+        change: `${Math.abs(activeEvents - prevActiveEvents)}`,
+        direction:
+          activeEvents >= prevActiveEvents ? "up" : "down",
+      },
+    },
+    recoveryComparison,
+    recoveryByType,
+    cumulativeRecovery:
+      createCumulativeRecovery(inRange),
+    merchants: createMerchantPerformance(inRange),
+  };
 }

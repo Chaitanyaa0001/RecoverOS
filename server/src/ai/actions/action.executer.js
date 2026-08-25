@@ -1,93 +1,151 @@
 import {
   sendRecoveryEmail,
   sendDunningEmail,
+  sendPaymentLinkEmail,
 } from "./email.actions.js";
 
 import {
-  createAndSendPaymentLink,
+  createPaymentLink,
 } from "./paymentLink.action.js";
 
-export const executeAction =
-  async (
-    action,
-    event
-  ) => {
-    try {
-      switch (action) {
+import { env } from "../../config/env.config.js";
 
-        case "EMAIL": {
-          const isB2B =
-            event.type ===
-              "Overdue Invoice" ||
-            event.type ===
-              "B2B Payment Due";
+export const executeAction = async (
+  action,
+  event
+) => {
+  try {
+    if (!action) {
+      return {
+        status: "FAILED",
+        action: null,
+        message:
+          "No recovery action was provided.",
+      };
+    }
 
-          if (isB2B) {
-            return await sendDunningEmail(
-              event
-            );
-          }
+    switch (action) {
 
-          return await sendRecoveryEmail(
+      // =====================================================
+      // EMAIL
+      // =====================================================
+
+      case "EMAIL": {
+        const isB2B =
+          event.type === "Overdue Invoice" ||
+          event.type === "B2B Payment Due";
+
+        if (isB2B) {
+          return await sendDunningEmail(
             event
           );
         }
 
-        case "PAYMENT_LINK":
-          return await createAndSendPaymentLink(
-            event
+        return await sendRecoveryEmail(
+          event
+        );
+      }
+
+
+      // =====================================================
+      // PAYMENT LINK
+      // =====================================================
+
+      case "PAYMENT_LINK": {
+        const paymentResult =
+          await createPaymentLink(event);
+
+        const emailResult =
+          await sendPaymentLinkEmail(
+            event,
+            paymentResult.link
           );
 
-        case "VOICE":
-          return {
-            status: "PENDING",
+        return {
+          status: "EXECUTED",
 
-            action: "VOICE",
+          action: "PAYMENT_LINK",
 
-            message:
-              "Voice recovery has been queued for a voice provider.",
-          };
+          message:
+            "Payment link generated and sent successfully.",
 
-        case "SMART_RETRY":
-          return {
-            status: "PENDING",
+          paymentLink:
+            paymentResult.link,
 
-            action:
-              "SMART_RETRY",
-
-            message:
-              "Smart payment retry has been scheduled.",
-          };
-
-        case "ACCOUNT_MANAGER":
-          return {
-            status: "BLOCKED",
-
-            action:
-              "ACCOUNT_MANAGER",
-
-            message:
-              "Case escalated to an account manager.",
-          };
-
-        default:
-          return {
-            status: "FAILED",
-
-            action,
-
-            message:
-              `Unknown action: ${action}`,
-          };
+          providerResponse:
+            emailResult.providerResponse,
+        };
       }
-    } catch (error) {
-      return {
-        status: "FAILED",
 
-        action,
 
-        message:
-          error.message,
-      };
+      // =====================================================
+      // VOICE
+      // =====================================================
+
+      case "VOICE": {
+        return {
+          status: "PENDING",
+
+          action: "VOICE",
+
+          message:
+            "Voice recovery has been queued for a voice provider.",
+
+          provider:
+            env.DEMO_MODE
+              ? "DEMO"
+              : "VOICE_PROVIDER",
+        };
+      }
+
+
+      // =====================================================
+      // ACCOUNT MANAGER
+      // =====================================================
+
+      case "ACCOUNT_MANAGER": {
+        return {
+          status: "PENDING",
+
+          action:
+            "ACCOUNT_MANAGER",
+
+          message:
+            "Case escalated to an account manager.",
+        };
+      }
+
+
+      // =====================================================
+      // UNKNOWN ACTION
+      // =====================================================
+
+      default: {
+        return {
+          status: "FAILED",
+
+          action,
+
+          message:
+            `Unknown recovery action: ${action}`,
+        };
+      }
     }
-  };
+
+  } catch (error) {
+    console.error(
+      `Action execution failed [${action}]:`,
+      error
+    );
+
+    return {
+      status: "FAILED",
+
+      action,
+
+      message:
+        error?.message ||
+        "Action execution failed.",
+    };
+  }
+};

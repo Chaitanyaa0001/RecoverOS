@@ -1,3 +1,9 @@
+import { randomUUID } from "crypto";
+
+/* =========================================================
+   EVENT ERROR CODES
+========================================================= */
+
 const EVENT_TYPE_ERROR_CODES = {
   "Payment Failure": [
     "insufficient_funds",
@@ -29,6 +35,10 @@ const EVENT_TYPE_ERROR_CODES = {
     "disputed_invoice",
   ],
 };
+
+/* =========================================================
+   DEMO DATA
+========================================================= */
 
 const FIRST_NAMES = [
   "Ananya",
@@ -89,8 +99,20 @@ const COMPANY_NAMES = [
   "Vantage Retail Group",
 ];
 
+/*
+ * Demo inbox.
+ */
+const DEMO_EMAIL =
+  "chaitanyakhurana.workk@gmail.com";
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
 function randomChoice(array) {
-  return array[Math.floor(Math.random() * array.length)];
+  return array[
+    Math.floor(Math.random() * array.length)
+  ];
 }
 
 function randomInt(min, max) {
@@ -107,12 +129,14 @@ function randomPastDate(maxHoursAgo) {
   );
 }
 
-function generateOneEvent(
-  index,
-  batchId,
-  isLiveDemoEvent = false
-) {
-  const types = Object.keys(EVENT_TYPE_ERROR_CODES);
+/* =========================================================
+   GENERATE ONE EVENT
+========================================================= */
+
+function generateOneEvent(isLiveDemoEvent = false) {
+  const types = Object.keys(
+    EVENT_TYPE_ERROR_CODES
+  );
 
   const type = randomChoice(types);
 
@@ -128,7 +152,7 @@ function generateOneEvent(
     ? randomInt(50000, 900000)
     : randomInt(500, 150000);
 
-  const id = `EVT-${48000 + index}`;
+  const id = `EVT-${randomUUID()}`;
 
   const detectedAt = randomPastDate(720);
 
@@ -143,14 +167,9 @@ function generateOneEvent(
 
     errorCode,
 
-    retryCount: randomInt(0, 2),
-
-    customerOptedOut:
-      Math.random() < 0.08,
+    customerOptedOut: false,
 
     detectedAt,
-
-    batchId,
 
     isLiveDemoEvent,
 
@@ -166,12 +185,17 @@ function generateOneEvent(
 
         time: detectedAt,
 
-        description: `${type} of ₹${amount.toLocaleString(
-          "en-IN"
-        )} detected.`,
+        description:
+          `${type} of ₹${amount.toLocaleString(
+            "en-IN"
+          )} detected.`,
       },
     ],
   };
+
+  /* =======================================================
+     B2B EVENT
+  ======================================================= */
 
   if (isB2B) {
     const companyName =
@@ -182,10 +206,8 @@ function generateOneEvent(
 
       companyName,
 
-      invoiceNumber: `INV-2026-${randomInt(
-        1000,
-        9999
-      )}`,
+      invoiceNumber:
+        `INV-2026-${randomInt(1000, 9999)}`,
 
       merchant: {
         id: `mrc_${randomInt(100, 999)}`,
@@ -193,14 +215,16 @@ function generateOneEvent(
       },
 
       customer: {
-        id: `cus_${10000 + index}`,
+        id: `cus_${randomUUID()}`,
         name: companyName,
-        email: `accounts@${companyName
-          .toLowerCase()
-          .replace(/[^a-z]/g, "")}.com`,
+        email: DEMO_EMAIL,
       },
     };
   }
+
+  /* =======================================================
+     CUSTOMER EVENT
+  ======================================================= */
 
   const firstName =
     randomChoice(FIRST_NAMES);
@@ -217,25 +241,28 @@ function generateOneEvent(
     },
 
     customer: {
-      id: `cus_${10000 + index}`,
+      id: `cus_${randomUUID()}`,
       name: `${firstName} ${lastName}`,
-      email: `${firstName.toLowerCase()}@example.com`,
+      email: DEMO_EMAIL,
     },
   };
 }
 
+/* =========================================================
+   GENERATE EVENTS
+========================================================= */
+
 export function generateSyntheticBatch(
   count,
-  batchId,
   isLiveDemoEvent = false
 ) {
+  const safeCount = Math.min(
+    Math.max(Number(count) || 10, 1),
+    500
+  );
+
   return Array.from(
-    { length: count },
-    (_, index) =>
-      generateOneEvent(
-        index,
-        batchId,
-        isLiveDemoEvent
-      )
+    { length: safeCount },
+    () => generateOneEvent(isLiveDemoEvent)
   );
 }

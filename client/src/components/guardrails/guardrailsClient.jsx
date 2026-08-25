@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import {
   ShieldCheck,
   ChevronDown,
-  CheckCircle2,
   Search,
 } from "lucide-react";
 
@@ -24,6 +23,10 @@ export default function GuardrailsClient({
       events: [],
     };
 
+  // =====================================================
+  // FILTER GUARDRAIL EVENTS
+  // =====================================================
+
   const filteredEvents = useMemo(() => {
     const value =
       search.toLowerCase().trim();
@@ -32,30 +35,33 @@ export default function GuardrailsClient({
       return guardrails.events || [];
     }
 
-    return (guardrails.events || []).filter(
-      (event) => {
-        const eventId =
-          event.id?.toLowerCase() || "";
+    return (
+      guardrails.events || []
+    ).filter((event) => {
+      const eventId =
+        event.id?.toLowerCase() || "";
 
-        const customer =
-          event.customer?.name?.toLowerCase() ||
-          "";
+      const customer =
+        event.customer?.name
+          ?.toLowerCase() || "";
 
-        const rule =
-          event.rule?.toLowerCase() || "";
+      const rule =
+        event.rule?.toLowerCase() || "";
 
-        const status =
-          event.status?.toLowerCase() || "";
+      const status =
+        event.status?.toLowerCase() || "";
 
-        return (
-          eventId.includes(value) ||
-          customer.includes(value) ||
-          rule.includes(value) ||
-          status.includes(value)
-        );
-      }
-    );
-  }, [guardrails.events, search]);
+      return (
+        eventId.includes(value) ||
+        customer.includes(value) ||
+        rule.includes(value) ||
+        status.includes(value)
+      );
+    });
+  }, [
+    guardrails.events,
+    search,
+  ]);
 
   const summary =
     guardrails.summary || {};
@@ -239,7 +245,7 @@ export default function GuardrailsClient({
 
             <p className="text-[11px] font-semibold text-slate-700">
 
-              {summary.percentage}%
+              {summary.percentage ?? 0}%
               {" "}
               of events were deliberately not acted on —
               {" "}
@@ -251,19 +257,19 @@ export default function GuardrailsClient({
 
             <p className="mt-1 text-[9px] leading-5 text-slate-500">
 
-              {summary.heldEvents?.toLocaleString(
-                "en-IN"
-              )}
+              {(
+                summary.heldEvents || 0
+              ).toLocaleString("en-IN")}
 
               {" "}
               of{" "}
 
-              {summary.totalEvents?.toLocaleString(
-                "en-IN"
-              )}
+              {(
+                summary.totalEvents || 0
+              ).toLocaleString("en-IN")}
 
               {" "}
-              events in the last 30 days were held back by retry caps,
+              events in the selected period were held back by
               opt-outs, quiet hours or incentive limits.
 
             </p>
@@ -329,8 +335,6 @@ export default function GuardrailsClient({
             bg-white
           "
         >
-
-          {/* DESKTOP / TABLET */}
 
           <div className="w-full overflow-x-auto">
 
@@ -403,7 +407,6 @@ export default function GuardrailsClient({
 
                 {filteredEvents.map(
                   (event) => (
-
                     <tr
                       key={event.id}
                       className="
@@ -451,7 +454,8 @@ export default function GuardrailsClient({
                             text-slate-500
                           "
                         >
-                          {event.rule}
+                          {event.rule ||
+                            "Policy restriction"}
                         </p>
 
                       </td>
@@ -467,7 +471,6 @@ export default function GuardrailsClient({
                       </td>
 
                     </tr>
-
                   )
                 )}
 
@@ -543,9 +546,11 @@ export default function GuardrailsClient({
 
 /* =========================================================
    STATUS BADGE
-   ========================================================= */
+========================================================= */
 
-function StatusBadge({ status }) {
+function StatusBadge({
+  status,
+}) {
   if (status === "Deferred") {
     return (
       <span
@@ -559,6 +564,26 @@ function StatusBadge({ status }) {
           text-[8px]
           font-medium
           text-amber-700
+        "
+      >
+        {status}
+      </span>
+    );
+  }
+
+  if (status === "Blocked") {
+    return (
+      <span
+        className="
+          inline-flex
+          items-center
+          rounded-full
+          bg-red-100
+          px-2
+          py-1
+          text-[8px]
+          font-medium
+          text-red-700
         "
       >
         {status}
@@ -602,7 +627,7 @@ function StatusBadge({ status }) {
         text-slate-500
       "
     >
-      {status}
+      {status || "No action"}
     </span>
   );
 }

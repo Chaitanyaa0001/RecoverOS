@@ -5,321 +5,347 @@ import Event from "../models/Events.js";
 import { env } from "../config/env.config.js";
 
 import {
-  emitBatchEvent,
+  emitRecoveryEvent,
 } from "../socket/socketEmitter.js";
 
-export const handleRazorpayWebhook =
-  async (req, res) => {
+/* =========================================================
+   RAZORPAY WEBHOOK
+========================================================= */
+
+export const handleRazorpayWebhook = async (
+  req,
+  res
+) => {
+  try {
+    /* =====================================================
+       1. SIGNATURE
+    ===================================================== */
+
+    const signature =
+      req.headers[
+        "x-razorpay-signature"
+      ];
+
+    if (!signature) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Missing Razorpay signature",
+      });
+    }
+
+    if (
+      !env.RAZORPAY_WEBHOOK_SECRET
+    ) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "RAZORPAY_WEBHOOK_SECRET is not configured",
+      });
+    }
+
+    /* =====================================================
+       2. RAW BODY
+    ===================================================== */
+
+    const rawBody = req.body;
+
+    if (!Buffer.isBuffer(rawBody)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Webhook body must be raw Buffer",
+      });
+    }
+
+    /* =====================================================
+       3. VERIFY SIGNATURE
+    ===================================================== */
+
+    const expectedSignature =
+      crypto
+        .createHmac(
+          "sha256",
+          env.RAZORPAY_WEBHOOK_SECRET
+        )
+        .update(rawBody)
+        .digest("hex");
+
+    const expectedBuffer =
+      Buffer.from(
+        expectedSignature,
+        "utf8"
+      );
+
+    const receivedBuffer =
+      Buffer.from(
+        String(signature),
+        "utf8"
+      );
+
+    if (
+      expectedBuffer.length !==
+      receivedBuffer.length
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid Razorpay signature",
+      });
+    }
+
+    const validSignature =
+      crypto.timingSafeEqual(
+        expectedBuffer,
+        receivedBuffer
+      );
+
+    if (!validSignature) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid Razorpay signature",
+      });
+    }
+
+    /* =====================================================
+       4. PARSE PAYLOAD
+    ===================================================== */
+
+    let payload;
 
     try {
-
-      // =====================================
-      // 1. SIGNATURE
-      // =====================================
-
-      const signature =
-        req.headers[
-          "x-razorpay-signature"
-        ];
-
-      if (!signature) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Missing Razorpay signature",
-        });
-      }
-
-      if (
-        !env.RAZORPAY_WEBHOOK_SECRET
-      ) {
-        return res.status(500).json({
-          success: false,
-          message:
-            "RAZORPAY_WEBHOOK_SECRET is not configured",
-        });
-      }
-
-      // =====================================
-      // 2. RAW BODY
-      // =====================================
-
-      const rawBody =
-        req.body;
-
-      if (!Buffer.isBuffer(rawBody)) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Webhook body must be raw Buffer",
-        });
-      }
-
-      // =====================================
-      // 3. VERIFY SIGNATURE
-      // =====================================
-
-      const expectedSignature =
-        crypto
-          .createHmac(
-            "sha256",
-            env.RAZORPAY_WEBHOOK_SECRET
-          )
-          .update(rawBody)
-          .digest("hex");
-
-      const expectedBuffer =
-        Buffer.from(
-          expectedSignature,
-          "utf8"
-        );
-
-      const receivedBuffer =
-        Buffer.from(
-          signature,
-          "utf8"
-        );
-
-      if (
-        expectedBuffer.length !==
-        receivedBuffer.length
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid Razorpay signature",
-        });
-      }
-
-      const isValid =
-        crypto.timingSafeEqual(
-          expectedBuffer,
-          receivedBuffer
-        );
-
-      if (!isValid) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid Razorpay signature",
-        });
-      }
-
-      // =====================================
-      // 4. PARSE PAYLOAD
-      // =====================================
-
-      const payload =
-        JSON.parse(
-          rawBody.toString("utf8")
-        );
-
-      console.log(
-        "Razorpay webhook:",
-        payload.event
+      payload = JSON.parse(
+        rawBody.toString("utf8")
       );
+    } catch {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid JSON payload",
+      });
+    }
 
-      // =====================================
-      // 5. IGNORE OTHER EVENTS
-      // =====================================
+    console.log(
+      "Razorpay webhook:",
+      payload.event
+    );
 
-      if (
-        payload.event !==
-        "payment_link.paid"
-      ) {
-        return res.status(200).json({
-          success: true,
-          ignored: true,
-          event:
-            payload.event,
-        });
-      }
+    /* =====================================================
+       5. EVENT TYPE
+    ===================================================== */
 
-      // =====================================
-      // 6. PAYMENT LINK
-      // =====================================
+    if (
+      payload.event !==
+      "payment_link.paid"
+    ) {
+      return res.status(200).json({
+        success: true,
+        ignored: true,
+        event: payload.event,
+      });
+    }
 
-      const paymentLink =
-        payload.payload
-          ?.payment_link
-          ?.entity;
+    /* =====================================================
+       6. PAYMENT LINK
+    ===================================================== */
 
-      if (!paymentLink) {
-        return res.status(200).json({
-          success: true,
-          ignored: true,
-          message:
-            "Payment link entity missing",
-        });
-      }
+    const paymentLink =
+      payload.payload
+        ?.payment_link
+        ?.entity;
 
-      // =====================================
-      // 7. FIND RECOVERJS EVENT
-      // =====================================
+    if (!paymentLink) {
+      return res.status(200).json({
+        success: true,
+        ignored: true,
+        message:
+          "Payment link entity missing",
+      });
+    }
 
-      const eventId =
-        paymentLink.notes
-          ?.recoverEventId ||
-        paymentLink.reference_id;
+    /* =====================================================
+       7. FIND EVENT
+    ===================================================== */
 
-      if (!eventId) {
-        return res.status(200).json({
-          success: true,
-          ignored: true,
-          message:
-            "RecoverJS event ID not found",
-        });
-      }
+    const eventId =
+      paymentLink.notes
+        ?.recoverEventId ||
+      paymentLink.reference_id;
 
-      const event =
-        await Event.findById(
-          eventId
-        );
+    if (!eventId) {
+      return res.status(200).json({
+        success: true,
+        ignored: true,
+        message:
+          "RecoverJS event ID not found",
+      });
+    }
 
-      if (!event) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "RecoverJS event not found",
-          eventId,
-        });
-      }
+    /* =====================================================
+       8. AMOUNT
+    ===================================================== */
 
-      // =====================================
-      // 8. IDEMPOTENCY
-      // =====================================
-
-      if (
-        event.status === "Recovered" &&
-        event.recoveredAmount > 0
-      ) {
-        return res.status(200).json({
-          success: true,
-          alreadyProcessed: true,
-          eventId,
-        });
-      }
-
-      // =====================================
-      // 9. RECOVERED AMOUNT
-      // =====================================
-
-      const recoveredAmount =
-        Number(
-          paymentLink.amount_paid ||
+    const recoveredAmount =
+      Number(
+        paymentLink.amount_paid ||
           paymentLink.amount ||
           0
-        ) / 100;
+      ) / 100;
 
-      // =====================================
-      // 10. UPDATE EVENT
-      // =====================================
-
-      event.recoveredAmount =
-        recoveredAmount;
-
-      event.status =
-        "Recovered";
-
-      event.resolvedAt =
-        new Date();
-
-      event.actionStatus =
-        "EXECUTED";
-
-      event.outcome =
-        `Payment recovered: ₹${recoveredAmount.toLocaleString(
-          "en-IN"
-        )}`;
-
-      event.timeline.push({
-        stage: "outcome",
-
-        title:
-          "Payment Recovered",
-
-        time:
-          new Date(),
-
-        description:
-          `Razorpay confirmed payment of ₹${recoveredAmount.toLocaleString(
-            "en-IN"
-          )}.`,
+    if (recoveredAmount <= 0) {
+      return res.status(200).json({
+        success: true,
+        ignored: true,
+        message:
+          "Invalid recovered amount",
       });
+    }
 
-      await event.save();
+    /* =====================================================
+       9. ATOMIC RECOVERY
+    ===================================================== */
 
-      console.log(
-        `Payment recovered for ${eventId}: ₹${recoveredAmount}`
-      );
+    /*
+     * This is the important idempotency mechanism.
+     *
+     * If two identical Razorpay webhooks arrive:
+     *
+     * webhook A → update succeeds
+     * webhook B → filter no longer matches
+     *
+     * Therefore payment cannot be marked recovered twice.
+     */
 
-      // =====================================
-      // 11. LIVE SOCKET UPDATE
-      // =====================================
-
-      emitBatchEvent(
-        event.batchId,
+    const updatedEvent =
+      await Event.findOneAndUpdate(
         {
-          eventId:
-            event._id,
+          _id: eventId,
 
-          stage:
-            "outcome",
+          status: {
+            $ne: "Recovered",
+          },
+        },
 
-          status:
-            "Recovered",
+        {
+          $set: {
+            recoveredAmount,
 
-          action:
-            event.action,
+            status: "Recovered",
 
-          actionStatus:
-            event.actionStatus,
+            resolvedAt: new Date(),
 
-          recoveredAmount:
-            event.recoveredAmount,
+            actionStatus: "EXECUTED",
 
-          paymentLink:
-            event.paymentLink,
+            outcome:
+              `Payment recovered: ₹${recoveredAmount.toLocaleString(
+                "en-IN"
+              )}`,
+          },
 
-          outcome:
-            event.outcome,
+          $push: {
+            timeline: {
+              stage: "outcome",
 
-          message:
-            `Payment recovered: ₹${recoveredAmount.toLocaleString(
-              "en-IN"
-            )}`,
+              title:
+                "Payment Recovered",
+
+              time: new Date(),
+
+              description:
+                `Razorpay confirmed payment of ₹${recoveredAmount.toLocaleString(
+                  "en-IN"
+                )}.`,
+            },
+          },
+        },
+
+        {
+          new: true,
         }
       );
 
-      // =====================================
-      // 12. RESPONSE
-      // =====================================
+    /* =====================================================
+       10. DUPLICATE WEBHOOK
+    ===================================================== */
 
+    if (!updatedEvent) {
       return res.status(200).json({
         success: true,
-
-        recovered: true,
-
+        alreadyProcessed: true,
         eventId,
-
-        recoveredAmount,
-      });
-
-    } catch (error) {
-
-      console.error(
-        "Razorpay webhook error:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-
-        message:
-          "Webhook processing failed",
-
-        error:
-          error.message,
       });
     }
-  };
+
+    /* =====================================================
+       11. SOCKET UPDATE
+    ===================================================== */
+
+    emitRecoveryEvent({
+      eventId: updatedEvent._id,
+
+      eventExternalId:
+        updatedEvent._id,
+
+      stage: "outcome",
+
+      status:
+        updatedEvent.status,
+
+      action:
+        updatedEvent.action,
+
+      actionStatus:
+        updatedEvent.actionStatus,
+
+      recoveredAmount:
+        updatedEvent.recoveredAmount,
+
+      paymentLink:
+        updatedEvent.paymentLink,
+
+      outcome:
+        updatedEvent.outcome,
+
+      resolvedAt:
+        updatedEvent.resolvedAt,
+
+      message:
+        `Payment recovered: ₹${recoveredAmount.toLocaleString(
+          "en-IN"
+        )}`,
+    });
+
+    console.log(
+      `Payment recovered for ${updatedEvent._id}: ₹${recoveredAmount}`
+    );
+
+    /* =====================================================
+       12. RESPONSE
+    ===================================================== */
+
+    return res.status(200).json({
+      success: true,
+      recovered: true,
+
+      eventId:
+        updatedEvent._id,
+
+      recoveredAmount,
+    });
+  } catch (error) {
+    console.error(
+      "Razorpay webhook error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Webhook processing failed",
+      error:
+        error?.message ||
+        "Unknown webhook error",
+    });
+  }
+};

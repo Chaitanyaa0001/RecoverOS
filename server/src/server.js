@@ -1,6 +1,5 @@
 import http from "http";
 import { Server } from "socket.io";
-
 import app from "./app.js";
 import { env } from "./config/env.config.js";
 import connectDB from "./config/database.js";
@@ -12,32 +11,24 @@ const httpServer = http.createServer(app);
 export const io = new Server(httpServer, {
   cors: {
     origin:
-      env.CLIENT_URL ||
-      "http://localhost:3000",
+      env.CLIENT_URL || "http://localhost:3000",
     credentials: true,
   },
+  transports: ["websocket", "polling"],
 });
 
 io.on("connection", (socket) => {
-  console.log(
-    `Socket connected: ${socket.id}`
-  );
+  console.log(`Socket connected: ${socket.id}`);
 
-  socket.on("join-batch", (batchId) => {
-    if (!batchId) return;
-    socket.join(`batch:${batchId}`);
-    console.log(`Socket ${socket.id} joined batch ${batchId}`);
-  });
-
-  socket.on("disconnect", () => {
+  socket.on("disconnect", (reason) => {
     console.log(
-      `Socket disconnected: ${socket.id}`
+      `Socket disconnected: ${socket.id}`,
+      reason
     );
   });
 });
 
 httpServer.listen(env.PORT, () => {
-  console.log(
-    `RecoverJS server running on port ${env.PORT}`
+  console.log(`RecoverJS server running on port ${env.PORT}`
   );
 });

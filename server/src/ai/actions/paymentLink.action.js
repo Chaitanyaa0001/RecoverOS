@@ -1,32 +1,32 @@
 import Razorpay from "razorpay";
 
-import { env } from "../../config/env.config.js";
-
 import {
-  sendPaymentLinkEmail,
-} from "./email.actions.js";
+  env,
+} from "../../config/env.config.js";
+
+/* =========================================================
+   RAZORPAY CLIENT
+========================================================= */
 
 const razorpay =
-  new Razorpay({
-    key_id:
-      env.RAZORPAY_KEY_ID,
+  !env.DEMO_MODE &&
+  env.RAZORPAY_KEY_ID &&
+  env.RAZORPAY_KEY_SECRET
+    ? new Razorpay({
+        key_id:
+          env.RAZORPAY_KEY_ID,
 
-    key_secret:
-      env.RAZORPAY_KEY_SECRET,
-  });
+        key_secret:
+          env.RAZORPAY_KEY_SECRET,
+      })
+    : null;
 
-export const createAndSendPaymentLink =
+/* =========================================================
+   CREATE PAYMENT LINK
+========================================================= */
+
+export const createPaymentLink =
   async (event) => {
-
-    if (
-      !env.RAZORPAY_KEY_ID ||
-      !env.RAZORPAY_KEY_SECRET
-    ) {
-      throw new Error(
-        "Razorpay credentials are not configured"
-      );
-    }
-
     if (
       !event.amount ||
       event.amount <= 0
@@ -41,6 +41,46 @@ export const createAndSendPaymentLink =
     ) {
       throw new Error(
         "Customer email is missing"
+      );
+    }
+
+    /* =====================================================
+       DEMO MODE
+    ===================================================== */
+
+    if (env.DEMO_MODE) {
+      const fakeLink = {
+        linkId:
+          `demo_pl_${event._id}`,
+
+        url:
+          `${
+            env.CLIENT_URL ||
+            "http://localhost:3000"
+          }/payment/demo/${event._id}`,
+
+        amount:
+          event.amount,
+
+        expiresInHours: 48,
+      };
+
+      return {
+        link: fakeLink,
+
+        providerResponse: {
+          demo: true,
+        },
+      };
+    }
+
+    /* =====================================================
+       RAZORPAY
+    ===================================================== */
+
+    if (!razorpay) {
+      throw new Error(
+        "Razorpay credentials are not configured"
       );
     }
 
@@ -66,16 +106,27 @@ export const createAndSendPaymentLink =
 
           email:
             event.customer.email,
+
+          ...(event.customer.phone
+            ? {
+                contact:
+                  event.customer.phone,
+              }
+            : {}),
         },
 
         notes: {
           recoverEventId:
             event._id,
-
-          batchId:
-            event.batchId,
         },
 
+        /*
+         * IMPORTANT:
+         *
+         * Razorpay does NOT send the email.
+         *
+         * Brevo handles email delivery.
+         */
         notify: {
           email: false,
           sms: false,
@@ -99,28 +150,13 @@ export const createAndSendPaymentLink =
       amount:
         event.amount,
 
-      expiresInHours:
-        48,
+      expiresInHours: 48,
     };
 
-    const emailResult =
-      await sendPaymentLinkEmail(
-        event,
-        link
-      );
-
     return {
-      status: "EXECUTED",
-
-      action:
-        "PAYMENT_LINK",
-
-      message:
-        "Razorpay payment link generated and sent to the customer.",
-
-      paymentLink: link,
+      link,
 
       providerResponse:
-        emailResult.providerResponse,
+        paymentLink,
     };
   };

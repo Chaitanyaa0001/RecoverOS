@@ -12,16 +12,39 @@ import {
 
 const router = express.Router();
 
-router.get("/", listEvents);
+router.get(
+  "/",
+  listEvents
+);
 
-router.get("/:id", getEvent);
+router.post(
+  "/seed",
+  seedSyntheticEvents
+);
 
-router.post("/", createNewEvent);
+router.get(
+  "/:id",
+  getEvent
+);
 
-router.patch("/:id", updateExistingEvent);
+router.post(
+  "/",
+  createNewEvent
+);
 
-router.delete("/:id", deleteExistingEvent);
+router.patch(
+  "/:id",
+  updateExistingEvent
+);
 
-router.delete("/", clearEvents);
+router.delete(
+  "/:id",
+  deleteExistingEvent
+);
+
+router.delete(
+  "/",
+  clearEvents
+);
 
 export default router;
